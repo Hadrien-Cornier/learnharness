@@ -17,6 +17,7 @@ import {
 import { practiceTools, type PracticeToolContext } from "./tools/practice.ts";
 import { healToolRecord, withArgumentHeal } from "./tools/heal.ts";
 import { sendToUserTool } from "./tools/send-to-user.ts";
+import { teachingCheckGuard } from "./check-teaching.ts";
 import { quizInputObject, quizInputProblems } from "../core/question-core.ts";
 import { QUESTION_TOOLS, type EnabledTools } from "../core/pending.ts";
 import { toLlmMessages, nativeInputCause, PRACTICE_PROBLEM_TOOL } from "../core/native-messages.ts";
@@ -198,17 +199,18 @@ function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: Agent
 			thinkingLevel: engine.level,
 			// Conditional registry inclusion, like the graph-tool gates: when
 			// closed, neither the tool nor its usage instructions reach the model.
-			// Match Claude across providers (including OpenRouter), not the API
+			// Match Claude and Gemini across providers (including OpenRouter), not the API
 			// transport. Explicit test registries remain caller-owned.
 			tools: [
 				...tools,
-				...(opts.tools === undefined && engine.model.id.toLowerCase().includes("claude")
+				...(opts.tools === undefined && /claude|gemini/i.test(engine.model.id)
 					? [withArgumentHeal(sendToUserTool)]
 					: []),
 			],
 			messages: opts.messages ?? [],
 		},
 		streamFn: engine.streamFn,
+		...(kind === "teacher" ? teachingCheckGuard() : {}),
 		...(providerEvents ? { onProviderStreamEvent: providerEvents } : {}),
 		// 0.87.1: shouldStopAfterTurn → finishTurn. Same call point (after
 		// tool results attach, before turn_end) and `{ action: "end" }` still

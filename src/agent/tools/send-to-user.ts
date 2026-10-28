@@ -11,7 +11,7 @@ const sendToUserInput = Type.Object({
 	}),
 });
 
-/** Claude's documented verbatim mid-turn output channel. Availability is
+/** Explicit mid-turn output for Claude and Gemini. Availability is
  * model-gated at the shared conversation-agent construction boundary;
  * the native call remains in history, and the view renders its message. */
 export const sendToUserTool: AgentTool<typeof sendToUserInput> = {

@@ -1,4 +1,4 @@
-/** Explicit Claude output: closed-network synthetic fixtures only. Native
+/** Explicit learner output: closed-network synthetic fixtures only. Native
  * history stays native; UI, extraction, and Markdown read the same prose. */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -88,6 +88,9 @@ describe("send_to_user model gate", () => {
 		["openrouter", "anthropic/claude-sonnet-5.5", true],
 		["amazon-bedrock", "us.anthropic.claude-opus-5-5-v1:0", true],
 		["fixture", "CLAUDE-fixture", true],
+		["google", "gemini-4-argon", true],
+		["openrouter", "google/gemini-4-argon", true],
+		["fixture", "GEMINI-fixture", true],
 		["openrouter", "z-ai/glm-5.3-flash", false],
 		["openai", "gpt-4o-mini", false],
 		["anthropic", "opaque-alias", false],
