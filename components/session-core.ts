@@ -26,6 +26,7 @@ import {
 	newThinkingMessage,
 	newUserMessage,
 	projectView,
+	toolResultDisplayOutput,
 	type ChatInput,
 	type LhMarkerMessage,
 	type LhMessage,
@@ -451,13 +452,13 @@ export class SessionModel {
 				// The execution layer: clean question placeholders are IGNORED
 				// downstream (view.ts fork 2); errors keep their validation text.
 				const result = agent.result as
-					| { content?: Array<{ type?: string; text?: string }>; details?: unknown }
+					| { content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }>; details?: unknown }
 					| null;
 				const text = result?.content?.find((c) => c.type === "text")?.text ?? "The tool call failed.";
 				this.mutate(() => {
 					this.executions = new Map(this.executions).set(agent.toolCallId, {
 						isError: agent.isError,
-						output: result?.details,
+						output: toolResultDisplayOutput(result, agent.toolName),
 						errorText: text,
 					});
 				});

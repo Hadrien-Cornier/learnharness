@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import type { ArtifactPartProps } from "@/src/core";
+import { toolResultImages, type ArtifactPartProps } from "@/src/core";
 
 /**
  * The generic tool-call card (sources v1, 2026-09-19): a quiet, collapsed
@@ -42,9 +42,7 @@ function headlineArg(tool: string, input: unknown): string {
 	return "";
 }
 
-/** Render a tool result body: plain strings verbatim, image-bearing read
- *  results show their text + an attachment note (the image itself is the
- *  model's — the learner sees only that it happened). */
+/** The trace retains text metadata; image attachments render below it. */
 function outputText(output: unknown): string | null {
 	if (output == null) return null;
 	if (typeof output === "string") return output;
@@ -52,7 +50,7 @@ function outputText(output: unknown): string | null {
 		const o = output as { text?: unknown; images?: unknown[] };
 		const text = typeof o.text === "string" ? o.text : null;
 		const n = Array.isArray(o.images) ? o.images.length : 0;
-		return n > 0 ? `${text ?? ""}\n[${n} image${n > 1 ? "s" : ""} attached to the model]`.trim() : text;
+		return n > 0 ? `${text ?? ""}\n[${n} image${n > 1 ? "s" : ""} attached]`.trim() : text;
 	}
 	try {
 		return JSON.stringify(output, null, 2);
@@ -66,8 +64,13 @@ export function ToolCallCard({ part }: ArtifactPartProps) {
 	const tool = p.type.replace(/^tool-/, "");
 	const arg = headlineArg(tool, p.input);
 	const out = outputText(p.output);
+	const images = p.state === "output-available" && tool === "read"
+		? toolResultImages((p.output as { images?: unknown } | null)?.images)
+		: [];
+	const filename = arg.split(/[\\/]/).pop() || "Image";
 	const failed = p.state === "output-error" || typeof p.errorText === "string";
 	return (
+		<>
 		<details
 			data-testid="tool-call-card"
 			data-tool={tool}
@@ -116,5 +119,26 @@ export function ToolCallCard({ part }: ArtifactPartProps) {
 				)}
 			</div>
 		</details>
+		{images.map((image, index) => {
+			const label = images.length === 1 ? filename : `${filename} (${index + 1})`;
+			const src = `data:${image.mimeType};base64,${image.data}`;
+			return (
+				<figure key={index} className="my-4 max-w-full" data-testid="read-image">
+					<details>
+						<summary aria-label={`Expand image ${label}`} className="w-fit max-w-full cursor-zoom-in list-none [&::-webkit-details-marker]:hidden">
+							{/* Native attachments already contain the image; no remote loader is needed. */}
+							{/* eslint-disable-next-line @next/next/no-img-element */}
+							<img src={src} alt={label} className="block rounded-lg" style={{ height: "auto", maxHeight: "32rem", maxWidth: "100%", objectFit: "contain" }} />
+						</summary>
+						<div className="mt-2 rounded-lg border" style={{ maxHeight: "80vh", overflow: "auto" }} aria-label={`Full-size image ${label}`}>
+							{/* eslint-disable-next-line @next/next/no-img-element */}
+							<img src={src} alt={`${label}, full size`} className="block" style={{ maxWidth: "none" }} loading="lazy" />
+						</div>
+					</details>
+					<figcaption className="mt-2 break-all text-xs text-muted-foreground">{label}</figcaption>
+				</figure>
+			);
+		})}
+		</>
 	);
 }
