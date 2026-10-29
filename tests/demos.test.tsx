@@ -1079,7 +1079,7 @@ describe("tool + renderer registry wiring", () => {
 		assert.ok(html.includes("<details"), "collapsed by default via a details element");
 	});
 
-	it("the tool-call card: image-bearing read results note the attachment; errors render red", () => {
+	it("the tool-call card: image-bearing read results display the attachment; errors render red", () => {
 		const imgPart = {
 			type: "tool-read",
 			state: "output-available",
@@ -1089,8 +1089,8 @@ describe("tool + renderer registry wiring", () => {
 		};
 		const html = renderToStaticMarkup(<ToolCallCard part={imgPart as never} />);
 		assert.match(html, /Read image file \[image\/png\]\./);
-		assert.match(html, /1 image attached to the model/);
-		assert.ok(!html.includes("AAAA"), "the image payload itself never renders");
+		assert.match(html, /1 image attached/);
+		assert.match(html, /src="data:image\/png;base64,AAAA"/, "the learner can see the image attachment");
 
 		const errPart = {
 			type: "tool-read",
