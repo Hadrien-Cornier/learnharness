@@ -32,6 +32,7 @@
  * Pure and deterministic: client-safe (no node deps), same input → same view.
  */
 
+import { toolResultDisplayOutput } from "./tool-result-output.ts";
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { LhMarkerMessage, LhMessage } from "./native-messages.ts";
 import { modelSolutionForConclude, PRACTICE_CONCLUDE_TOOL, problemInputForConclude, SEND_TO_USER_TOOL, sendToUserText } from "./native-messages.ts";
@@ -108,7 +109,7 @@ function applyResult(part: LhViewPart, result: ToolResultMessage): void {
 		part.errorText = text && text.type === "text" ? text.text : "The tool call failed.";
 	} else {
 		part.state = "output-available";
-		part.output = result.details;
+		part.output = toolResultDisplayOutput(result, result.toolName);
 	}
 }
 
