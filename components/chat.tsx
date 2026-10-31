@@ -2,6 +2,7 @@
 
 import { createContext, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChatSession } from "@/components/session";
+import { useReadingDraft } from "@/components/use-reading-draft";
 import { visibleQueuedSteers } from "@/components/session-core";
 import { SetupDialog } from "@/components/setup-dialog";
 import { Hint } from "@/components/ui/hint";
@@ -413,13 +414,14 @@ export function Chat({
 			if (p) {
 				const question = (p.input as { question?: string } | null)?.question ?? "";
 				const reading = readingThinkingRef.current.trim() || undefined;
-				clearReadingThinking();
+				saveQuestionDraft(p.key, { readingThinking: readingThinkingRef.current });
+				submittedReadingQuestionRef.current = p.key;
 				const answer = dismissedAnswer(toolQuestionKind(p.tool), question);
 				void dismissQuestion(
 					p.toolCallId,
 					reading ? { ...answer, readingThinking: reading } : answer,
 					p.key,
-				);
+				).finally(() => settleReadingSubmission(p.key, pendingRef.current?.key === p.key));
 				if (busyRef.current) abortInFlightTurn();
 				return;
 			}
@@ -433,7 +435,7 @@ export function Chat({
 				if (busyRef.current) abortInFlightTurn();
 			}
 		},
-		[abortInFlightTurn, dismissQuestion, dismissProblem],
+		[abortInFlightTurn, dismissQuestion, dismissProblem, saveQuestionDraft],
 	);
 	// Mount continuation: if the stored transcript ends with a fulfilled tool
 	// (a job result landed while no client was open), resume the lesson — the
@@ -517,40 +519,14 @@ export function Chat({
 	// question's phase.
 	const requiresReveal = pending !== null && questionNeedsReveal(pending.tool, pending.input, phaseAt3(messages));
 
-	/* The READING-THINKING channel (owner 2026-10-03): a draft field for
-	 * thinking while reading the teaching prose, mounted while a check waits
-	 * behind its reveal, riding the check answer (or its dismissal) as the
-	 * separate `readingThinking` field. Reset per pending question. */
-	const [readingThinkingSeed, setReadingThinkingSeed] = useState({ questionId: null as string | null, value: "", revision: 0 });
-	const readingThinkingRef = useRef("");
+	const pendingQuestionId = pending?.key ?? null;
 
-	// ⌘T (toggle-user-thinking, owner round 2026-10-07): set EVERY user
-	// thinking row to one state — transcript rows default open, so the
-	// first press collapses everything, the second re-expands.
+	// ⌘T toggles every user thinking row together.
 	useEffect(() => {
 		const onToggle = () => setAllUserThinkingOpen(!currentUserThinkingOpen());
 		window.addEventListener(kbdEventForChat("toggle-user-thinking"), onToggle);
 		return () => window.removeEventListener(kbdEventForChat("toggle-user-thinking"), onToggle);
 	}, []);
-	const applyReadingThinking = useCallback((v: string) => {
-		readingThinkingRef.current = v;
-	}, []);
-	const clearReadingThinking = useCallback(() => {
-		readingThinkingRef.current = "";
-		setReadingThinkingSeed((previous) => ({ ...previous, value: "", revision: previous.revision + 1 }));
-	}, []);
-	const pendingQuestionId = pending?.key ?? null;
-	useLayoutEffect(() => {
-		// Different calls never share a draft; a failed submission of THIS
-		// call restores the reading channel alongside the form's snapshot.
-		const value = pendingQuestionId ? questionDraft(pendingQuestionId)?.readingThinking ?? "" : "";
-		readingThinkingRef.current = value;
-		setReadingThinkingSeed((previous) =>
-			previous.questionId === pendingQuestionId && previous.value === value
-				? previous
-				: { questionId: pendingQuestionId, value, revision: previous.revision + 1 },
-		);
-	}, [pendingQuestionId, questionDraft]);
 
 	// The phase at every message (one linear fold): the transcript draws a
 	// color-coded dotted divider at each boundary; the header chip reads the
@@ -569,6 +545,11 @@ export function Chat({
 	const recordComposerText = useCallback((v: string) => {
 		textRef.current = v;
 	}, []);
+	const clearReadingSnapshot = useCallback((id: string) => saveQuestionDraft(id, { readingThinking: undefined }), [saveQuestionDraft]);
+	const { seed: readingThinkingSeed, readingRef: readingThinkingRef,
+		submittedRef: submittedReadingQuestionRef, applyReading: applyReadingThinking,
+		settleSubmission: settleReadingSubmission } = useReadingDraft(pendingQuestionId, questionDraft, clearReadingSnapshot, textRef, applyText);
+
 	// Saved slot completeness is live, but the session's selected route
 	// comes from its own ordinary model control, never today's Strong pin.
 	const { catalog, configured, zeroKeys } = useModelSetup(initialConfigured);
@@ -1734,6 +1715,8 @@ export function Chat({
 						)
 					}
 					composer={
+						<>
+						{kind === "teach" && <div className="px-4 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Thinking while reading</div>}
 						<ChatSessionComposer
 							// Stop aborts ANY in-flight turn (stream-reattach wave): the
 							// square renders while a reattached/wake turn runs too — the
@@ -1756,6 +1739,7 @@ export function Chat({
 							onNext={sendNext}
 							placeholder={nextReady ? "Ask anything, or press Enter for the next one." : undefined}
 						/>
+						</>
 					}
 					onSubmitAnswer={(output) => {
 						if (!pending) return;
@@ -1765,13 +1749,14 @@ export function Chat({
 						// once) and the server's write-ahead persists it before the
 						// turn; the teacher's reaction streams below it. Dismissals
 						// ride the same callback (QuestionAnswerData.dismissed). The
-						// reading-thinking draft rides along (owner 2026-10-03) — the
-						// check answer is its only carrier.
+						// reading-thinking draft rides along with the answer.
 						saveQuestionDraft(pending.key, { readingThinking: readingThinkingRef.current });
+						submittedReadingQuestionRef.current = pending.key;
 						const reading = readingThinkingRef.current.trim() || undefined;
 						// The pending-id effect clears this only when the question
 						// actually leaves. An offline preflight keeps the draft visible.
-						submitAnswer(pending.tool, pending.toolCallId, reading ? { ...output, readingThinking: reading } : output, pending.key);
+						void submitAnswer(pending.tool, pending.toolCallId, reading ? { ...output, readingThinking: reading } : output, pending.key)
+							.finally(() => settleReadingSubmission(pending.key, pendingRef.current?.key === pending.key));
 					}}
 				/>
 				</Conversation>
@@ -2362,11 +2347,9 @@ function DockOverlay({
 					    rounding starts, truncated, no background, no container. A
 					    line dies when its card lands (visibleQueuedSteers). */}
 					<QueuedSteersBody steers={queuedSteers} />
-					{/* The reading-thinking field (owner 2026-10-03): mounted while a
-					    teach-phase check waits — the same cue that collapses it. It
-					    claims dictated speech until the learner reveals the check
-					    (the dock reclaims then). Rides the check answer on submit. */}
-					{pending && requiresReveal && (
+					{/* The reading draft rides the pending question answer. Dictation
+					    targets it while a check is hidden, then returns to the dock. */}
+					{pending && (
 						<ReadingThinkingField
 							value={readingThinking}
 							revision={readingThinkingRevision}

@@ -1,4 +1,4 @@
-import React, { act, useRef, useState } from "react";
+import React, { act, useCallback, useRef, useState } from "react";
 (globalThis as Record<string, unknown>).React = React;
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -7,6 +7,7 @@ import { afterEach, describe, it } from "node:test";
 import { parseHTML } from "linkedom";
 import type { Root } from "react-dom/client";
 import { ChatSessionComposer } from "../components/composer.tsx";
+import { useReadingDraft } from "../components/use-reading-draft.ts";
 import { ReadingThinkingField } from "../components/reading-thinking.tsx";
 import { readPathInput } from "../components/path-input-dom.ts";
 import { appendToPrimaryInput, joinDictation } from "../components/dictation.tsx";
@@ -264,5 +265,56 @@ describe("session text fields keep keystrokes local", () => {
 		});
 		assert.equal(readPathInput(editor), "typed thoughts spoken tail `/synthetic/notes.pdf`");
 		assert.equal(forwardedEdits, 3, "each edit forwards its synchronous snapshot exactly once");
+	});
+});
+
+
+describe("reading draft handoff", () => {
+	it("moves a live draft through questions and restores rejected answers", async () => {
+		let changeQuestion!: (id: string | null) => void;
+		let submit!: () => void;
+		let refuse!: () => void;
+		const snapshots = new Map<string, { readingThinking: string }>();
+		function Harness() {
+			const [pending, setPending] = useState<string | null>(null);
+			const [revision, setRevision] = useState(0);
+			const text = useRef("");
+			const applyText = useCallback((v: string) => { text.current = v; setRevision((n) => n + 1); }, []);
+			const questionDraft = useCallback((id: string) => snapshots.get(id), []);
+			const clearSnapshot = useCallback((id: string) => { snapshots.delete(id); }, []);
+			const draft = useReadingDraft(pending, questionDraft, clearSnapshot, text, applyText);
+			changeQuestion = setPending;
+			refuse = () => {
+				if (!pending) return;
+				snapshots.set(pending, { readingThinking: draft.readingRef.current });
+				draft.submittedRef.current = pending;
+				draft.settleSubmission(pending, true);
+			};
+			submit = () => {
+				if (!pending) return;
+				snapshots.set(pending, { readingThinking: draft.readingRef.current });
+				draft.submittedRef.current = pending;
+				setPending(null);
+			};
+			return pending ? <ReadingThinkingField value={draft.seed.value} revision={draft.seed.revision} onChange={draft.applyReading} claim={false} /> :
+				<ChatSessionComposer value={text.current} revision={revision} onChange={(v) => { text.current = v; }} busy={false} sendAllowed dictationActive={false} onSend={() => {}} onStop={() => {}} />;
+		}
+		const host = await mount(<Harness />);
+		await typeText(editorIn(host), "first thought");
+		await act(async () => changeQuestion("prediction"));
+		assert.equal(readPathInput(editorIn(host)), "first thought");
+		await act(async () => changeQuestion("ask"));
+		assert.equal(readPathInput(editorIn(host)), "first thought");
+		await act(async () => changeQuestion(null));
+		assert.equal(readPathInput(editorIn(host)), "first thought");
+		await act(async () => changeQuestion("prediction"));
+		await act(async () => submit());
+		assert.equal(readPathInput(editorIn(host)), "", "optimistic answer is not replayed");
+		await typeText(editorIn(host), "later thought");
+		await act(async () => changeQuestion("prediction"));
+		assert.equal(readPathInput(editorIn(host)), "first thought\nlater thought", "failed answer restores its snapshot and newer text");
+		await act(async () => refuse());
+		await act(async () => changeQuestion("ask"));
+		assert.equal(readPathInput(editorIn(host)), "first thought\nlater thought", "preflight refusal does not discard the draft on a later transition");
 	});
 });

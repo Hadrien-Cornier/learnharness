@@ -226,8 +226,7 @@ export function normalizeQuizType(raw: unknown): QuizQuestionType | undefined {
  *  teaching and gates it; collapsing it would invert the cycle), and
  *  neither do probe/plan questions or ask. Both teach quizzing tools
  *  (quiz and explain) obey the same law. chat.tsx calls this for its
- *  pending question; the reading-thinking field mounts on the same
- *  truth. Records that predate the `type` field carry none — they render
+ *  pending question to determine whether the check starts collapsed. Records that predate the `type` field carry none — they render
  *  as checks, the standing default. */
 export function questionNeedsReveal(tool: string, rawInput: unknown, phase: string): boolean {
 	if ((tool !== "quiz" && tool !== "explain") || phase !== "teach") return false;
@@ -460,7 +459,7 @@ export interface QuestionAnswerData {
 	note?: string;
 	/** The learner's thinking WHILE READING the teaching prose (owner
 	 *  2026-10-03) — a separate channel from `thinking`, captured by the
-	 *  reading field and riding the check answer. Absent when empty. */
+	 *  reading field and riding the question answer. Absent when empty. */
 	readingThinking?: string;
 	confidence?: number; // quiz only: the learner's stated probability (0-100, raw) that his selected answer is correct — never sent on "I don't know" (owner, 2026-10-01)
 	correct?: boolean; // quiz only
@@ -488,7 +487,7 @@ export interface AnswerRequest {
 	other?: string; // ask "Other"
 	text?: string; // ask text-mode
 	thinking?: string; // the reasoning-on-the-question channel (was `note`)
-	readingThinking?: string; // the thinking-while-reading channel (check answers)
+	readingThinking?: string; // the thinking-while-reading channel (question answers)
 	confidence?: number; // quiz only: 0-100 raw probability — 50 is a real coin flip, always sent (owner, 2026-10-01)
 }
 

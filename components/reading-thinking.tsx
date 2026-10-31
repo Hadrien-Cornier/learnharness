@@ -4,21 +4,9 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { PathInput } from "@/components/path-input";
 
-/**
- * The reading-thinking field (owner design 2026-10-03, "two questions per
- * teaching unit"): a quiet textarea for thinking WHILE READING the
- * teaching prose — the same transfer channel the question dock's "Your
- * thinking" gives the answer, opened one phase earlier. It mounts while a
- * teach-phase check waits behind its reveal (the same cue that collapses
- * the check), rides the check answer as the SEPARATE `readingThinking`
- * channel (never conflated with the quiz thinking), and disappears with
- * the question.
- *
- * Dictation: while the check sits UNREVEALED this field is the primary
- * target (the dock releases its claim — dictated reading-thoughts land
- * here, not in the hidden quiz field); once the learner reveals the
- * check, the dock reclaims and this field is plain typing.
- */
+/** A reading draft for any pending question. It accompanies the answer as
+ * `readingThinking`. Dictation targets it while a check is unrevealed;
+ * otherwise the active question field has priority. */
 export function ReadingThinkingField({
 	value,
 	revision,
