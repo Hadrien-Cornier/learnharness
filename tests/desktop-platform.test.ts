@@ -165,7 +165,7 @@ describe("desktop packaging policy", () => {
 		const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 		assert.equal(pkg.author.name, "Amos Blomqvist");
 		assert.equal(pkg.author.email, "255718537+amosblomqvist@users.noreply.github.com");
-		assert.equal(pkg.homepage, "https://github.com/amosblomqvist/learnharness");
+		assert.equal(pkg.homepage, "https://github.com/Hadrien-Cornier/learnharness");
 		assert.equal(pkg.desktopName, "learnharness.desktop");
 	});
 });
@@ -310,5 +310,21 @@ describe("desktop release workflow", () => {
 			{ id: 10, tag_name: "v0.3.0", draft: true },
 			{ id: 11, tag_name: "v0.3.0", draft: true },
 		]), /Multiple releases match/);
+	});
+});
+
+
+describe("custom Mac packaging", () => {
+	it("uses its own identity and disables signing and publishing", () => {
+		const config = require("../electron-builder.custom.cjs");
+		const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+		assert.equal(config.appId, "com.hadriencornier.LearnHarness");
+		assert.equal(config.productName, "Hadrien LearnHarness");
+		assert.equal(config.extraMetadata.customBuild, true);
+		assert.equal(config.publish, null);
+		assert.equal(config.mac.identity, null);
+		assert.equal(config.mac.notarize, false);
+		assert.equal(pkg.customBuild, true);
+		assert.equal(pkg.scripts["desktop:dist"], "npm run desktop:custom");
 	});
 });
