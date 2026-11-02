@@ -42,7 +42,8 @@ const path = require("node:path");
 // renderer owns the number; this is the IPC widen target).
 const SIDEBAR_AUTOCLOSE = 928;
 
-const PRODUCT_NAME = "LearnHarness";
+const CUSTOM_BUILD = require("../package.json").customBuild === true;
+const PRODUCT_NAME = CUSTOM_BUILD ? "Hadrien LearnHarness" : "LearnHarness";
 const { Workspace, constrainBounds } = require("./workspace.cjs");
 
 // APP NAME → userData (owner, 2026-10-10): the Application Support dir is
@@ -524,6 +525,7 @@ function checkForUpdates({ manual = false } = {}) {
 }
 
 function installUpdateNow() {
+	if (!autoUpdater) return;
 	// Kill the server BEFORE the quit-and-install (see block comment).
 	try {
 		killServer();
@@ -534,6 +536,11 @@ function installUpdateNow() {
 }
 
 function setupAutoUpdater() {
+	if (CUSTOM_BUILD) {
+		log("custom build: manual updates only");
+		reportUpdateStatus("disabled");
+		return;
+	}
 	if (!app.isPackaged) {
 		log("auto-update: dev build — updater disabled");
 		reportUpdateStatus("disabled");

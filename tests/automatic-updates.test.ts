@@ -13,7 +13,7 @@ const mainFile = fileURLToPath(new URL("../electron/main.cjs", import.meta.url))
 const mainSource = readFileSync(mainFile, "utf8");
 const mainRequire = createRequire(mainFile);
 
-function fixture({ packaged = true, updaterMissing = false } = {}) {
+function fixture({ packaged = true, updaterMissing = false, customBuild = false } = {}) {
 	let settings: string | Error = JSON.stringify({ version: 1, general: { autoUpdate: true } });
 	const settingsReads: string[] = [];
 	const order: string[] = [];
@@ -91,6 +91,7 @@ function fixture({ packaged = true, updaterMissing = false } = {}) {
 	const context = createContext({
 		require: (id: string) => {
 			if (id === "electron") return electron;
+			if (id === "../package.json") return { customBuild };
 			if (id === "./workspace.cjs") {
 				const workspaceModule = mainRequire(id);
 				return { ...workspaceModule, Workspace: class extends workspaceModule.Workspace { persist() {} } };
@@ -329,5 +330,23 @@ describe("workspace view lifecycle", () => {
 		for (const channel of ["get", "open", "move", "close", "save"]) {
 			assert.throws(() => f.handles.get(`lh:workspace:${channel}`)!(foreign), /Untrusted/);
 		}
+	});
+});
+
+
+describe("custom desktop updates", () => {
+	it("custom packaged builds never initialize or check the official updater", async () => {
+		const f = fixture({ customBuild: true });
+		f.run("setupAutoUpdater()");
+		assert.equal(f.run("PRODUCT_NAME"), "Hadrien LearnHarness");
+		assert.equal(f.run("autoUpdater"), null);
+		assert.equal(f.state().status, "disabled");
+		f.run("serverProcess = fixtureChild; installUpdateNow()");
+		assert.deepEqual(f.order, []);
+		await f.check();
+		await f.check(true);
+		assert.equal(f.updater.checks, 0);
+		assert.equal(f.updater.autoDownload, false);
+		assert.equal(f.updater.autoInstallOnAppQuit, false);
 	});
 });
