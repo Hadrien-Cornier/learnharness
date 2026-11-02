@@ -1,3 +1,11 @@
+# Hadrien LearnHarness custom build
+
+The `custom/main` branch adds multiple session windows, split views, PNG display, and failed-demo retry. The custom Mac app has its own identity and profile. It uses manual updates.
+
+See [custom build and update instructions](docs/custom-release.md) and [validation results](docs/session-views-validation.md). The clean upstream feature proposal is [PR #476](https://github.com/amosblomqvist/learnharness/pull/476).
+
+The upstream project README follows.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/lh_banner_dark.png">

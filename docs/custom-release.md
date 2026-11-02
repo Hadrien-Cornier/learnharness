@@ -20,7 +20,7 @@ Use macOS with Node, npm, and Xcode installed. Signing and notarization are disa
 3. Run `npm run typecheck`, `npm test`, and `npm run lint`.
 4. Run `npm run desktop:custom`.
 5. Run `node scripts/smoke-workspace.mjs --app "dist-custom/mac-arm64/Hadrien LearnHarness.app/Contents/MacOS/Hadrien LearnHarness"`.
-6. Inspect the packaged app with an isolated `LH_PROFILE_DIR`. Check its own server, PNG preview and full-size image, demo retry, and restart restoration.
+6. Run `scripts/smoke-packaged-workspace.mjs` and `scripts/smoke-demo-retry-packaged.mjs` with the packaged executable path. These use isolated profiles and local fixtures.
 7. Publish the ZIP and DMG with a `custom-` release tag on this fork. Include the source commit and validation limits in the release notes.
 
 The build script clears only `dist-custom` and `.next/standalone`. It runs the production build, provider runtime check, standalone curation, and server smoke test before packaging. It never uploads automatically.
@@ -42,3 +42,5 @@ Do not merge `custom/main` into the upstream feature PR. If upstream changes req
 ## Evidence limits
 
 See the release validation record. Synthetic streams prove the tested UI and transport paths. They do not establish real provider reliability, microphone behavior, or placement on two physical displays. This release does not migrate the official app's data.
+
+Native smoke tests create and focus windows. Schedule them when they will not interrupt your work. Source checks, build checks, and artifact inspection can run in the background.
