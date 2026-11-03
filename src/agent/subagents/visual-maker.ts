@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
+import { usageWasAdmitted } from "../subscription-request-cycle.ts";
+import { withAgentRetry, type AgentRetryOptions } from "./retry.ts";
 import type { AssistantMessage, Message, Tool, ToolResultMessage, Usage } from "@earendil-works/pi-ai";
 import { normalizeContext } from "@earendil-works/pi-ai";
 import { processImage, type ProcessImageResult } from "../image-processing/index.ts";
@@ -37,11 +38,11 @@ export interface VisualMakerInput {
 	brief: string;
 }
 
-export interface VisualMakerOptions {
+export interface VisualMakerOptions extends AgentRetryOptions {
 	/** Test seam: scripted engine; production uses the visualMaker role. */
 	engine?: PiEngine;
 	headless?: HeadlessApi;
-	/** Max model rounds (write/render cycles + final answer). Default 16 per attempt. One automatic retry is permitted. */
+	/** Max model rounds (write/render cycles + final answer). Default 24 per attempt. At most two automatic retries. */
 	maxIterations?: number;
 	/** Live activity-line callback (updates the job record). */
 	onActivity?: (line: string) => void;
@@ -130,34 +131,14 @@ const LOOK_MESSAGE =
 const UNLOOKED_FINISH_MESSAGE =
 	"You finished without looking at a render of your final SVG. Above is its render. If it is correct and clean, reply with just your notes; otherwise call write_svg with fixes and render again.";
 
-/** Retry once for an exhausted drawing budget or a temporary provider failure.
- * Each attempt keeps its own transcript. Usage includes both attempts.
- * Configuration, content refusals, and cancellation never trigger a retry.
- */
 export async function runVisualMaker(input: VisualMakerInput, opts: VisualMakerOptions = {}): Promise<VisualResult> {
-	let result = await runVisualAttempt(input, opts);
-	if (!result.svg && !opts.abortSignal?.aborted && retryableVisualFailure(result.notes ?? "")) {
-		opts.onActivity?.("Automatic retry 1/1: drawing figure again");
-		try {
-			await delay(1_000, undefined, { signal: opts.abortSignal });
-		} catch {
-			return result;
-		}
-		result = await runVisualAttempt(input, opts);
-	}
-	return result;
-}
-
-function retryableVisualFailure(notes: string): boolean {
-	if (/abort|cancel|content_filter|content filter|safety|unauthorized|forbidden|invalid.*key|no.*key|not configured|quota|insufficient|payment/i.test(notes)) return false;
-	return /^FAILED: iteration limit/.test(notes) ||
-		(/^FAILED: the maker crashed/.test(notes) && /\b(?:429|500|502|503|504)\b|rate.?limit|timed? ?out|timeout|overload|temporar|ECONNRESET|ETIMEDOUT|fetch failed|connection error|connection reset|connection closed|stream ended without a result/i.test(notes));
+	return withAgentRetry(() => runVisualAttempt(input, opts), result => result.svg ? undefined : result.notes, opts);
 }
 
 async function runVisualAttempt(input: VisualMakerInput, opts: VisualMakerOptions): Promise<VisualResult> {
 	const headless = opts.headless ?? getHeadless();
 	const brief = input.brief.trim() || "(no brief)";
-	const maxIterations = opts.maxIterations ?? 16;
+	const maxIterations = opts.maxIterations ?? 24;
 
 	const reason = headless.unavailableReason();
 	if (reason) {
@@ -205,6 +186,7 @@ async function runVisualAttempt(input: VisualMakerInput, opts: VisualMakerOption
 				opts.abortSignal,
 				opts.chatId ? providerEventObserver(opts.chatId, "job:visualMaker") : undefined,
 				capture,
+				opts.onUsage,
 			);
 			// Money channel: each iteration is one model call.
 			opts.onUsage?.(result.usage);
@@ -370,6 +352,7 @@ async function streamOnce(
 	abortSignal?: AbortSignal,
 	onProviderStreamEvent?: ProviderEventObserver,
 	capture?: BackgroundCapture,
+	onFailedUsage?: (usage: Usage) => void,
 ): Promise<AssistantMessage> {
 	// 0.87.1: provider-facing contexts are TranscriptContexts — the prompt
 	// and tool declarations fold into a leading system message.
@@ -388,6 +371,10 @@ async function streamOnce(
 				const err = new Error("aborted");
 				err.name = "AbortError";
 				throw err;
+			}
+			if (usageWasAdmitted(event.error.usage) &&
+				(event.error.usage.input + event.error.usage.output + event.error.usage.cacheRead + event.error.usage.cacheWrite > 0)) {
+				onFailedUsage?.(event.error.usage);
 			}
 			throw new Error(event.error.errorMessage ?? "the model call failed");
 		}

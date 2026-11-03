@@ -58,14 +58,14 @@ export function DispatchCard({ toolCallId, kind }: { toolCallId: string; kind: J
 			setRetrying(false);
 		}
 	}
-	const retryAction = (kind === "demo" || kind === "visual") && job?.status === "error" && ctx ? <>
+	const retryAction = job?.status === "error" && ctx ? <>
 		<button type="button" data-testid="dispatch-retry" disabled={retrying} onClick={() => void retry()}
 			className="ml-1 rounded-sm border border-border bg-card px-2 py-0.5 font-ui normal-case tracking-normal text-foreground transition-colors hover:border-muted-foreground/50 disabled:opacity-50">
 			{retrying ? "Retrying…" : "Retry"}
 		</button>
 		{retryError && <span role="alert" className="text-red-500">{retryError}</span>}
 	</> : null;
-	const failureDetails = kind === "visual" && job?.status === "error" && job.error ? (
+	const failureDetails = job?.status === "error" && job.error ? (
 		<details className="basis-full" data-testid="dispatch-error-details">
 			<summary className="cursor-pointer">Error details</summary>
 			<pre className="mt-1 whitespace-pre-wrap break-words font-ui text-xs">{job.error}</pre>

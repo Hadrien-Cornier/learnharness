@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { usageWasAdmitted } from "../subscription-request-cycle.ts";
+import { withAgentRetry, type AgentRetryOptions } from "./retry.ts";
 import type { AssistantMessage, Message, ToolResultMessage, Usage, Tool } from "@earendil-works/pi-ai";
 import { normalizeContext } from "@earendil-works/pi-ai";
 import { processImage, type ProcessImageResult } from "../image-processing/index.ts";
@@ -57,14 +59,14 @@ Your FINAL assistant message is your entire deliverable — it must stand alone,
 claim cited as (p. N). End with a line "Pages consulted: N, N, …" listing every page you
 extracted or rendered.`;
 
-const MAX_ITERATIONS = 14;
+const MAX_ITERATIONS = 24;
 /** Rendered pages per pdf_render call — the skill renders selectively; a
  *  batch cap keeps one over-eager call from flooding the vision context. */
 const RENDER_BATCH_CAP = 6;
 /** Extract output ceiling — narrow the spec instead of dumping a book. */
 const EXTRACT_CAP = 24_000;
 
-export interface PdfReaderOptions {
+export interface PdfReaderOptions extends AgentRetryOptions {
 	engine?: PiEngine;
 	abortSignal?: AbortSignal;
 	onUsage?: (usage: Usage) => void;
@@ -167,6 +169,10 @@ export async function runPdfReaderAgent(
 	input: PdfReaderInput,
 	opts: PdfReaderOptions = {},
 ): Promise<PdfResult> {
+	return withAgentRetry(() => runPdfAttempt(input, opts), result => result.brief.startsWith("PDF failed:") ? result.brief : undefined, opts);
+}
+
+async function runPdfAttempt(input: PdfReaderInput, opts: PdfReaderOptions): Promise<PdfResult> {
 	const headless = opts.headless ?? getHeadless();
 	const maxIterations = opts.maxIterations ?? MAX_ITERATIONS;
 	const pdfPath = resolveSourcePath(input.path);
@@ -220,6 +226,7 @@ export async function runPdfReaderAgent(
 				opts.abortSignal,
 				opts.chatId ? providerEventObserver(opts.chatId, "job:pdfReader") : undefined,
 				capture,
+				opts.onUsage,
 			);
 			// Money channel: each iteration is one model call.
 			opts.onUsage?.(result.usage);
@@ -361,7 +368,7 @@ export async function runPdfReaderAgent(
 	return {
 		path: pdfPath,
 		question: input.question,
-		brief: finalText || `PDF failed: iteration limit (${maxIterations}) reached without a brief.`,
+		brief: `PDF failed: iteration limit (${maxIterations}) reached without a final brief.`,
 		pagesRead: [...read].sort((a, b) => a - b),
 		pagesConsulted: [...consulted].sort((a, b) => a - b),
 	};
@@ -422,6 +429,7 @@ async function streamOnce(
 	abortSignal?: AbortSignal,
 	onProviderStreamEvent?: ProviderEventObserver,
 	capture?: BackgroundCapture,
+	onFailedUsage?: (usage: Usage) => void,
 ): Promise<AssistantMessage> {
 	// 0.87.1: provider-facing contexts are TranscriptContexts — the prompt
 	// and tool declarations fold into a leading system message.
@@ -441,6 +449,10 @@ async function streamOnce(
 				const abortedErr = err as Error & { name: string };
 				abortedErr.name = "AbortError";
 				throw abortedErr;
+			}
+			if (usageWasAdmitted(event.error.usage) &&
+				(event.error.usage.input + event.error.usage.output + event.error.usage.cacheRead + event.error.usage.cacheWrite > 0)) {
+				onFailedUsage?.(event.error.usage);
 			}
 			throw new Error(event.error.errorMessage ?? "the model call failed");
 		}

@@ -4,6 +4,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import { serverExecute } from "../tool-execute.ts";
 import type { PiEngine } from "../models.ts";
 import { runSubagent } from "./pi-run.ts";
+import { withAgentRetry, type AgentRetryOptions } from "./retry.ts";
 import type { DemoResult } from "../../core/contracts.ts";
 import { getHeadless, type DemoRunResult, type HeadlessApi } from "./headless.ts";
 import { healToolRecord } from "../tools/heal.ts";
@@ -30,11 +31,11 @@ export interface DemoBuilderInput {
 	brief: string;
 }
 
-export interface DemoBuilderOptions {
+export interface DemoBuilderOptions extends AgentRetryOptions {
 	/** Test seam: scripted engine; production uses the demoBuilder role. */
 	engine?: PiEngine;
 	headless?: HeadlessApi;
-	/** Max agent steps (each write/run/fix is one step). Default 24 ≈ 6 cycles. */
+	/** Max agent steps (each write/run/fix is one step). Default 32, approximately 8 cycles. */
 	maxSteps?: number;
 	/** Live activity-line callback (updates the job record). */
 	onActivity?: (line: string) => void;
@@ -182,6 +183,10 @@ function failureSummary(result: DemoRunResult | null): string {
 }
 
 export async function runDemoBuilder(input: DemoBuilderInput, opts: DemoBuilderOptions = {}): Promise<DemoResult> {
+	return withAgentRetry(() => runDemoAttempt(input, opts), result => result.html ? undefined : result.notes, opts);
+}
+
+async function runDemoAttempt(input: DemoBuilderInput, opts: DemoBuilderOptions): Promise<DemoResult> {
 	const headless = opts.headless ?? getHeadless();
 	const title = input.title.trim() || "Interactive demo";
 	const brief = input.brief.trim() || "(no brief)";
@@ -206,10 +211,11 @@ export async function runDemoBuilder(input: DemoBuilderInput, opts: DemoBuilderO
 	try {
 		const result = await runSubagent(Object.values(createDemoBuilderTools(state, headless, opts.onActivity)), {
 			role: "demoBuilder",
+			retryProviderCalls: false,
 			engine: opts.engine,
 			systemPrompt: INSTRUCTIONS,
 			prompt,
-			maxTurns: opts.maxSteps ?? 24,
+			maxTurns: opts.maxSteps ?? 32,
 			abortSignal: opts.abortSignal,
 			onUsage: (usage) => opts.onUsage?.(usage),
 			onToolStart: (toolName) => opts.onActivity?.(toolName),

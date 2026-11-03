@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { chatStore } from "../src/store/chats.ts";
 import { jobStore } from "../src/store/jobs.ts";
-import { JobRetryError, retryDemoJob, setJobRespawn } from "../src/server/jobs.ts";
+import { JobRetryError, retryDemoJob, retryJob, setJobRespawn } from "../src/server/jobs.ts";
+import type { JobKind } from "../src/core/contracts.ts";
 import type { LhMessage } from "../src/core/native-messages.ts";
 
 const chats: string[] = [];
 const input = { title: "Policy gradient", brief: "Compare the two gradient estimators with a mean slider." };
-function fixture(savedInput: unknown = input, kind: "demo" | "visual" | "research" = "demo") {
+function fixture(savedInput: unknown = input, kind: JobKind = "demo") {
 	const chat = chatStore.createChat("Test: retry failed demo");
 	chats.push(chat.id);
 	const job = jobStore.createJob({ chatId: chat.id, toolCallId: "call-demo", kind, input: savedInput });
@@ -29,7 +30,86 @@ afterEach(() => {
 	}
 });
 
-describe("failed demo retry", () => {
+describe("failed job retry", () => {
+	const cases: [JobKind, Record<string, unknown>][] = [
+		["research", { question: "Which estimator has lower variance?", context: "Compare their variance.", source: "saved context" }],
+		["pdf", { path: "/tmp/gradient-notes.pdf", question: "", source: "saved PDF" }],
+		["visual", { brief: "Compare the estimators.", source: "saved figure" }],
+		["demo", { ...input, source: "saved demo" }],
+	];
+	for (const [kind, originalInput] of cases) {
+		it(`preserves every saved ${kind} field and deduplicates its retry`, () => {
+			const { chat, job } = fixture(originalInput, kind);
+			const foreign = chatStore.createChat("Test: foreign retry"); chats.push(foreign.id);
+			const started: string[] = [];
+			setJobRespawn((id) => started.push(id));
+			fails(() => retryJob(foreign.id, job.id), 404);
+			const retry = retryJob(chat.id, job.id);
+			assert.equal(retry.kind, kind);
+			assert.equal(retry.status, "running");
+			assert.equal(retry.retryOf, job.id);
+			assert.equal(retry.toolCallId, job.toolCallId);
+			assert.deepEqual(retry.input, originalInput);
+			assert.equal(retry.error, undefined);
+			assert.equal(retry.result, undefined);
+			assert.equal(retry.delivery, undefined);
+			assert.deepEqual(jobStore.getJob(job.id), job);
+			assert.equal(retryJob(chat.id, job.id).id, retry.id);
+			assert.deepEqual(started, [retry.id]);
+		});
+
+		it(`recovers legacy ${kind} arguments and returns one successor through POST`, async () => {
+			const { POST } = await import("../app/api/jobs/route.ts");
+			const { chat, job } = fixture(originalInput, kind);
+			jobStore.updateJob(job.id, { input: undefined });
+			chatStore.saveMessages(chat.id, [{
+				id: `assistant-${kind}`, role: "assistant", content: [{ type: "toolCall", id: job.toolCallId, name: kind, arguments: originalInput }],
+				timestamp: 1,
+			} as unknown as LhMessage]);
+			const started: string[] = [];
+			setJobRespawn((id) => started.push(id));
+			const request = () => new Request("http://localhost/api/jobs", { method: "POST", body: JSON.stringify({ chatId: chat.id, jobId: job.id }) });
+			const response = await POST(request());
+			assert.equal(response.status, 200);
+			const first = (await response.json()).job;
+			assert.equal(first.kind, kind);
+			assert.deepEqual(first.input, originalInput);
+			assert.equal((await (await POST(request())).json()).job.id, first.id);
+			assert.deepEqual(started, [first.id]);
+		});
+	}
+
+	it("accepts an omitted or empty research context", () => {
+		setJobRespawn(() => {});
+		for (const saved of [{ question: "Which estimator?" }, { question: "Which estimator?", context: "" }]) {
+			const { chat, job } = fixture(saved, "research");
+			assert.deepEqual(retryJob(chat.id, job.id).input, saved);
+		}
+	});
+
+	it("rejects malformed research and PDF inputs without creating attempts", () => {
+		let starts = 0;
+		setJobRespawn(() => { starts++; });
+		const invalid: [JobKind, unknown][] = [
+			["research", null], ["research", {}], ["research", { question: " " }],
+			["research", { question: 42 }], ["research", { question: "Question", context: null }],
+			["research", { question: "Question", context: 42 }],
+			["pdf", null], ["pdf", {}], ["pdf", { path: " ", question: "Question" }],
+			["pdf", { path: 42, question: "Question" }], ["pdf", { path: "/tmp/paper.pdf" }],
+			["pdf", { path: "/tmp/paper.pdf", question: 42 }],
+		];
+		for (const [kind, saved] of invalid) {
+			const { chat, job } = fixture(saved, kind);
+			fails(() => retryJob(chat.id, job.id), 409);
+			assert.equal(jobStore.listJobs(chat.id).length, 1);
+		}
+		assert.equal(starts, 0);
+	});
+
+	it("keeps the original retryDemoJob export compatible", () => {
+		assert.equal(retryDemoJob, retryJob);
+	});
+
 	it("preserves a failed pending delivery and starts a fresh saved attempt once", () => {
 		const { chat, job } = fixture();
 		const started: string[] = [];
@@ -110,7 +190,7 @@ describe("failed demo retry", () => {
 		assert.deepEqual(retryDemoJob(chat.id, job.id).input, input);
 	});
 
-	it("rejects missing, foreign, invalid, running and non-demo jobs before spawn", () => {
+	it("rejects missing, foreign, invalid, running and malformed jobs before spawn", () => {
 		const { chat, job } = fixture();
 		const foreign = chatStore.createChat("Test: foreign retry"); chats.push(foreign.id);
 		let starts = 0;

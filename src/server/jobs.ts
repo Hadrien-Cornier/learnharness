@@ -775,33 +775,46 @@ export class JobRetryError extends Error {
 	}
 }
 
+/** Keep saved tool arguments intact after checking the fields each runner needs. */
+function validRetryInput(kind: JobRecord["kind"], input: unknown): input is Record<string, unknown> {
+	if (!input || typeof input !== "object" || Array.isArray(input)) return false;
+	const fields = input as Record<string, unknown>;
+	const nonempty = (value: unknown) => typeof value === "string" && value.trim().length > 0;
+	switch (kind) {
+		case "demo": return nonempty(fields.title) && nonempty(fields.brief);
+		case "visual": return nonempty(fields.brief);
+		case "research": return nonempty(fields.question) && (fields.context === undefined || typeof fields.context === "string");
+		case "pdf": return nonempty(fields.path) && typeof fields.question === "string";
+		default: return false;
+	}
+}
+
 /** Create and claim one successor without awaiting between reads and writes.
  * Repeated requests name the failed attempt and return its saved successor.
  * A new identity keeps result delivery and usage from the old attempt intact.
  */
-export function retryDemoJob(chatId: string, jobId: string): JobRecord {
+export function retryJob(chatId: string, jobId: string): JobRecord {
 	if (!/^[A-Za-z0-9_-]+$/.test(chatId) || !/^[A-Za-z0-9_-]+$/.test(jobId)) {
 		throw new JobRetryError("Invalid chatId or jobId", 400);
 	}
 	const chat = stores.chatStore.getChat(chatId);
 	const job = stores.jobStore.getJob(jobId);
 	if (!chat || !job || job.chatId !== chatId) throw new JobRetryError("Job not found", 404);
-	if ((job.kind !== "demo" && job.kind !== "visual") || job.status !== "error") {
-		throw new JobRetryError("Only a failed demo or figure job can be retried", 409);
+	if (job.status !== "error") {
+		throw new JobRetryError("Only a failed job can be retried", 409);
 	}
 	const successor = stores.jobStore.listJobs(chatId).find((candidate) => candidate.retryOf === job.id);
 	if (successor) return successor;
-	const label = job.kind === "visual" ? "figure" : "demo";
-	const input = resolveJobInput(job, chat.messages) as { title?: unknown; brief?: unknown } | null | undefined;
-	if (!input || typeof input !== "object" || typeof input.brief !== "string" || !input.brief.trim() ||
-		(job.kind === "demo" && (typeof input.title !== "string" || !input.title.trim()))) {
+	const label = job.kind === "visual" ? "figure" : job.kind === "pdf" ? "PDF" : job.kind;
+	const input = resolveJobInput(job, chat.messages);
+	if (!validRetryInput(job.kind, input)) {
 		throw new JobRetryError(`The original ${label} request is unavailable`, 409);
 	}
 	const respawn = state().respawn;
 	if (!respawn) throw new JobRetryError(`The ${label} runner is unavailable. Try again shortly.`, 503);
 	const next = stores.jobStore.createJob({
 		kind: job.kind, chatId, toolCallId: job.toolCallId, retryOf: job.id,
-		input: job.kind === "visual" ? { brief: input.brief } : { title: input.title, brief: input.brief },
+		input,
 	});
 	try {
 		respawn(next.id);
@@ -811,3 +824,6 @@ export function retryDemoJob(chatId: string, jobId: string): JobRecord {
 	}
 	return stores.jobStore.getJob(next.id) ?? next;
 }
+
+/** Compatibility for callers of the original demo retry entry point. */
+export const retryDemoJob = retryJob;

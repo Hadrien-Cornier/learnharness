@@ -5,6 +5,7 @@ import { createPdfReadTools } from "../tools/pdf-read.ts";
 import type { SearchProvider } from "../../core/search.ts";
 import type { PiEngine } from "../models.ts";
 import { runSubagent } from "./pi-run.ts";
+import { withAgentRetry, type AgentRetryOptions } from "./retry.ts";
 
 /**
  * The researcher sub-agent (vision §2.5): a SEPARATE ToolLoopAgent instance
@@ -67,7 +68,11 @@ Numbered findings with inline source citations:
 ## Gaps
 What couldn't be answered. Suggested next steps.`;
 
-export interface ResearcherRunOptions {
+export interface ResearcherRunOptions extends AgentRetryOptions {
+	/** Model calls per attempt. Default 24. */
+	maxTurns?: number;
+	/** Reset source provenance before each fresh attempt. */
+	onAttempt?: () => void;
 	engine?: PiEngine;
 	/** The search seam (search port wave, 2026-09-20): resolves the LIVE
 	 *  provider per call, null = honestly unavailable (the web_search tool
@@ -92,19 +97,30 @@ export interface ResearcherRunOptions {
  * the loop scripted.
  */
 export async function runResearcherAgent(prompt: string, opts: ResearcherRunOptions = {}): Promise<string> {
+	return withAgentRetry(() => runResearchAttempt(prompt, opts), () => undefined, opts);
+}
+
+async function runResearchAttempt(prompt: string, opts: ResearcherRunOptions): Promise<string> {
+	opts.onAttempt?.();
 	const tools = Object.values(createWebTools(opts.search ?? (() => null)));
 	if (opts.pdfDir) tools.push(...Object.values(createPdfReadTools(opts.pdfDir)));
-	const { text } = await runSubagent(tools, {
+	const { text, newMessages } = await runSubagent(tools, {
 		role: "researcher",
+		retryProviderCalls: false,
 		prompt,
 		engine: opts.engine,
 		systemPrompt: INSTRUCTIONS,
-		maxTurns: 12,
+		maxTurns: opts.maxTurns ?? 24,
 		abortSignal: opts.abortSignal,
 		onUsage: opts.onUsage,
 		onToolStart: opts.onToolStart,
 		chatId: opts.chatId,
 	});
+	const last = [...newMessages].reverse().find(message => message.role === "assistant") as { stopReason?: string; content?: { type: string }[] } | undefined;
+	if (!text.trim()) throw new Error("The researcher produced no text.");
+	if (last?.stopReason === "toolUse" || last?.stopReason === "length" || last?.content?.some(part => part.type === "toolCall")) {
+		throw new Error(`Research iteration limit (${opts.maxTurns ?? 24}) reached without a final brief.`);
+	}
 	return text;
 }
 

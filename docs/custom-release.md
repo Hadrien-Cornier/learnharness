@@ -45,8 +45,12 @@ See the release validation record. Synthetic streams prove the tested UI and tra
 
 Native smoke tests create and focus windows. Schedule them when they will not interrupt your work. Source checks, build checks, and artifact inspection can run in the background.
 
-## Figure recovery
+## Background agent recovery
 
-Figure generation permits 16 model calls per attempt, increased from 8. Two calls before the limit, the agent receives a reminder to render its final drawing and inspect it.
+Research, Demo, Figure, and PDF jobs have manual Retry and saved error details. Retry creates one saved successor per failed attempt and preserves the original job and tool arguments.
 
-A Figure job retries automatically once after an exhausted call budget or a temporary provider error. Authentication errors, content refusals, and cancellation do not trigger automatic retries. Both attempts count toward the job usage, with at most 32 calls in total. A failed Figure card supplies a Retry button and saved error details. Manual retry creates a new attempt and preserves the original job.
+Each job permits two automatic retries after temporary provider failures or an exhausted call budget. Delays are 5 and 15 seconds. Authentication, billing, missing-file failures, content refusals, and cancellation stop immediately. Usage includes all admitted calls from every attempt.
+
+The per-attempt call limits are 24 for Research, Figure, and PDF, and 32 for Demo. A Figure reminder asks the model to finish its final render and inspection before the limit. A budget cannot turn unfinished research or PDF text into a completed brief.
+
+The internal extractor and auditor retry individual failed model calls with the same delay policy. They keep completed tool work and collector state. Failed partial tool calls never execute. Extraction has eight submit turns, and audit has 24 exploration turns.

@@ -360,6 +360,8 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 			const brief = await runResearcherAgent(prompt, {
 				engine: model,
 				search: deps.searchProvider,
+				onActivity: (line) => jobStore.updateJob(jobId, { activity: line }),
+				onAttempt: () => { fetchedUrls.length = 0; },
 				pdfDir,
 				abortSignal: loop.abortSignal,
 				chatId: loop.chatId,

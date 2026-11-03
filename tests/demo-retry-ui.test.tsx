@@ -96,3 +96,28 @@ test("A failed figure shows plain-text error details and Retry displays the runn
 	await render([figure, { ...figureRetry, status: "done" }], "visual");
 	assert.match(host!.textContent!, /finished/);
 });
+
+
+for (const [kind, label] of [["research", "Research agent"], ["pdf", "PDF reader"], ["demo", "Demo agent"]] as const) {
+	test(`A failed ${kind} shows saved error details and Retry displays its running attempt`, async () => {
+		const original: JobRecord = { ...failed, kind, error: 'Provider error: <b>overloaded</b>' };
+		const retry: JobRecord = { ...running, kind, activity: "Retry started" };
+		let requests = 0;
+		globalThis.fetch = async (_url, init) => {
+			requests++;
+			assert.deepEqual(JSON.parse(String(init?.body)), { chatId: original.chatId, jobId: original.id });
+			return Response.json({ job: retry });
+		};
+		await render([original], kind);
+		const details = host!.querySelector('[data-testid="dispatch-error-details"]');
+		assert.ok(details);
+		assert.equal(details.querySelector("pre")!.textContent, original.error);
+		assert.equal(details.querySelector("b"), null);
+		await act(async () => click());
+		assert.equal(requests, 1);
+		assert.match(host!.textContent!, new RegExp(label));
+		assert.match(host!.textContent!, /Retry started/);
+		assert.equal(host!.querySelector('[data-testid="dispatch-retry"]'), null);
+		assert.equal(host!.querySelector('[data-testid="dispatch-error-details"]'), null);
+	});
+}

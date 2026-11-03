@@ -5,6 +5,7 @@ import { APP_IDENTITY, piEngineFor, type PiEngine } from "../models.ts";
 import { usageWasAdmitted } from "../subscription-request-cycle.ts";
 import { providerEventObserver } from "../provider-events.ts";
 import { backgroundCaptureStream, createBackgroundCapture } from "../background-capture.ts";
+import { retrySubagentStream } from "./stream-retry.ts";
 import type { ModelRole } from "../../../config.ts";
 
 /**
@@ -31,6 +32,10 @@ export interface SubagentRunOptions {
 	prompt?: string;
 	/** Max model calls (the old stepCountIs safety net). */
 	maxTurns: number;
+	/** Disable when the caller already retries the whole job. Defaults to true. */
+	retryProviderCalls?: boolean;
+	/** Test seam for internal per-request retries. */
+	retryDelaysMs?: readonly number[];
 	/** Abort mid-model-call (the real-kill semantics). */
 	abortSignal?: AbortSignal;
 	/** Money channel: one call per model request. */
@@ -63,12 +68,33 @@ export function subagentEngine(role: ModelRole, override?: PiEngine): PiEngine {
 }
 
 export async function runSubagent(tools: AgentTool<any, any>[], opts: SubagentRunOptions): Promise<SubagentRunResult> {
+	if (opts.abortSignal?.aborted) {
+		const error = new Error("aborted");
+		error.name = "AbortError";
+		throw error;
+	}
 	const engine = subagentEngine(opts.role, opts.engine);
 	let turns = 0;
 	// Debug recorder (owner, 2026-10-04): raw provider events per job run.
 	const providerEvents = opts.chatId ? providerEventObserver(opts.chatId, `job:${opts.role}`) : undefined;
 	const sessionId = randomUUID();
 	const capture = createBackgroundCapture({ role: opts.role, runId: sessionId, sourceId: opts.chatId });
+	let step = 0;
+	function recordMessage(message: AssistantMessage): void {
+		capture?.reply(message);
+		if (message.stopReason === "aborted" || !usageWasAdmitted(message.usage)) return;
+		step++;
+		opts.onUsage?.(message.usage);
+		// A failed provider response never executes its partial tool calls.
+		const accounted = message.stopReason === "error"
+			? { ...message, content: message.content.filter((block) => block.type !== "toolCall") }
+			: message;
+		opts.onAssistantMessage?.(accounted, step);
+	}
+	const capturedStream = backgroundCaptureStream(engine.streamFn, capture);
+	// Callers that retry the whole job opt out to keep one retry policy.
+	const streamFn = opts.retryProviderCalls === false ? capturedStream
+		: retrySubagentStream(capturedStream, { retryDelaysMs: opts.retryDelaysMs, onDiscardedMessage: recordMessage });
 	const agent = new Agent({
 		identity: APP_IDENTITY,
 		// One unsaved conversation per invocation, stable through every turn.
@@ -80,7 +106,7 @@ export async function runSubagent(tools: AgentTool<any, any>[], opts: SubagentRu
 			tools,
 			messages: opts.messages ?? [],
 		},
-		streamFn: backgroundCaptureStream(engine.streamFn, capture),
+		streamFn,
 		...(providerEvents ? { onProviderStreamEvent: providerEvents } : {}),
 		// 0.87.1: shouldStopAfterTurn → finishTurn (same call point; "end"
 		// exits before the steering poll, exactly the old boolean-true).
@@ -96,7 +122,6 @@ export async function runSubagent(tools: AgentTool<any, any>[], opts: SubagentRu
 	opts.abortSignal?.addEventListener("abort", onAbort, { once: true });
 
 	const before = opts.messages?.length ?? 0;
-	let step = 0;
 	let errorMessage: string | undefined;
 	let aborted = false;
 	let runFailure: unknown;
@@ -107,7 +132,7 @@ export async function runSubagent(tools: AgentTool<any, any>[], opts: SubagentRu
 				case "message_end":
 					if ((event.message as { role?: string }).role === "assistant") {
 						const m = event.message as AssistantMessage;
-						capture?.reply(m);
+						recordMessage(m);
 						if (m.stopReason === "aborted") {
 							// The call was cancelled — no completed step, no billed
 							// usage (the abort path asserts zero steps).
@@ -115,9 +140,6 @@ export async function runSubagent(tools: AgentTool<any, any>[], opts: SubagentRu
 							break;
 						}
 						if (!usageWasAdmitted(m.usage)) { if (m.stopReason === "error") errorMessage = m.errorMessage; break; }
-						step++;
-						opts.onUsage?.(m.usage);
-						opts.onAssistantMessage?.(m, step);
 						if (m.stopReason === "error") errorMessage = m.errorMessage;
 					} else if (event.message.role === "toolResult") {
 						capture?.toolResult(event.message);

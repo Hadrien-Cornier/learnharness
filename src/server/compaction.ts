@@ -80,7 +80,11 @@ async function subagentSummarizer(prompt: string, engine: PiEngine): Promise<{ s
 		systemPrompt: SUMMARIZER_SYSTEM_PROMPT,
 		maxTurns: 1,
 		onUsage: (u) => {
-			usage = u;
+			for (const key of ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as const) usage[key] += u[key];
+			for (const key of ["cacheWrite1h", "reasoning"] as const) {
+				if (u[key] !== undefined) usage[key] = (usage[key] ?? 0) + u[key]!;
+			}
+			for (const key of ["input", "output", "cacheRead", "cacheWrite", "total"] as const) usage.cost[key] += u.cost[key];
 		},
 	});
 	// A provider-declared incomplete response is not a usable checkpoint,

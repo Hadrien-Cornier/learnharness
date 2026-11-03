@@ -62,8 +62,8 @@ export async function runSubmitAgent<T>(opts: {
 	/** Extra tools beside the submit call (the auditor's graph-exploration
 	 *  set, 2026-09-27): a small agentic loop instead of a bare retry. */
 	extraTools?: Record<string, AgentTool<any>>;
-	/** Turn budget for the loop (default 4 = retry-only; the auditor runs
-	 *  an exploration loop instead — 16). */
+	/** Turn budget for the loop (default 8 = retry-only; the auditor runs
+	 *  an exploration loop instead: 24). */
 	maxTurns?: number;
 	/** Debug: raw provider-event recording key (LH_PROVIDER_EVENTS=1). */
 	chatId?: string;
@@ -111,7 +111,7 @@ export async function runSubmitAgent<T>(opts: {
 			engine: opts.engine,
 			systemPrompt: opts.systemPrompt,
 			prompt: opts.prompt,
-			maxTurns: opts.maxTurns ?? 4,
+			maxTurns: opts.maxTurns ?? 8,
 			abortSignal: opts.signal,
 			chatId: opts.chatId,
 			onAssistantMessage: (message, step) =>

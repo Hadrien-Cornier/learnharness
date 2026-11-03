@@ -647,7 +647,7 @@ describe("demo builder (fake model + fake headless)", () => {
 			{ toolCalls: [{ toolCallId: "w1", toolName: "write_demo", input: { html: BROKEN_HTML } }] },
 			{ text: "It works, trust me." },
 		]);
-		const result = await runDemoBuilder({ title: "T", brief: "b" }, { engine: model, headless });
+		const result = await runDemoBuilder({ title: "T", brief: "b" }, { engine: model, headless, retryDelaysMs: [] });
 		assert.equal(result.html, "");
 		assert.equal(result.tested, true, "the loop ran");
 		assert.match(result.notes ?? "", /^FAILED:/);
@@ -692,19 +692,19 @@ describe("visual maker (fake model + fake headless)", () => {
 		]);
 		const activities: string[] = [];
 		let calls = 0;
-		const result = await runVisualMaker({ brief: "b" }, { engine, maxIterations: 2, headless: fakeHeadless(), onUsage: () => { calls++; }, onActivity: line => activities.push(line) });
+		const result = await runVisualMaker({ brief: "b" }, { engine, maxIterations: 2, retryDelaysMs: [0, 0], headless: fakeHeadless(), onUsage: () => { calls++; }, onActivity: line => activities.push(line) });
 		assert.equal(result.svg, SVG_1);
 		assert.equal(calls, 4);
 		assert.equal(activities.filter(line => line.startsWith("Automatic retry")).length, 1);
 	});
 
-	it("stops after the second exhausted budget", async () => {
-		const engine = scriptedModel(Array.from({ length: 4 }, (_, i) => ({ toolCalls: [{ toolCallId: `w${i}`, toolName: "write_svg", input: { svg: SVG_1 } }] })));
+	it("stops after the third exhausted budget", async () => {
+		const engine = scriptedModel(Array.from({ length: 6 }, (_, i) => ({ toolCalls: [{ toolCallId: `w${i}`, toolName: "write_svg", input: { svg: SVG_1 } }] })));
 		let calls = 0;
-		const result = await runVisualMaker({ brief: "b" }, { engine, maxIterations: 2, headless: fakeHeadless(), onUsage: () => { calls++; } });
+		const result = await runVisualMaker({ brief: "b" }, { engine, maxIterations: 2, retryDelaysMs: [0, 0], headless: fakeHeadless(), onUsage: () => { calls++; } });
 		assert.equal(result.svg, "");
 		assert.match(result.notes!, /iteration limit/);
-		assert.equal(calls, 4);
+		assert.equal(calls, 6);
 	});
 
 	it("retries a temporary provider failure but does not retry authentication failures", async () => {
@@ -716,7 +716,7 @@ describe("visual maker (fake model + fake headless)", () => {
 			const stream = engine.streamFn;
 			let calls = 0;
 			engine.streamFn = (...args) => { if (++calls === 1) throw new Error(reason); return stream(...args); };
-			const result = await runVisualMaker({ brief: "b" }, { engine, headless: fakeHeadless() });
+			const result = await runVisualMaker({ brief: "b" }, { engine, headless: fakeHeadless(), retryDelaysMs: [0, 0] });
 			assert.equal(calls, reason !== "401 Unauthorized" ? 3 : 1);
 			assert.equal(Boolean(result.svg), reason !== "401 Unauthorized");
 		}
