@@ -44,3 +44,9 @@ Do not merge `custom/main` into the upstream feature PR. If upstream changes req
 See the release validation record. Synthetic streams prove the tested UI and transport paths. They do not establish real provider reliability, microphone behavior, or placement on two physical displays. This release does not migrate the official app's data.
 
 Native smoke tests create and focus windows. Schedule them when they will not interrupt your work. Source checks, build checks, and artifact inspection can run in the background.
+
+## Figure recovery
+
+Figure generation permits 16 model calls per attempt, increased from 8. Two calls before the limit, the agent receives a reminder to render its final drawing and inspect it.
+
+A Figure job retries automatically once after an exhausted call budget or a temporary provider error. Authentication errors, content refusals, and cancellation do not trigger automatic retries. Both attempts count toward the job usage, with at most 32 calls in total. A failed Figure card supplies a Retry button and saved error details. Manual retry creates a new attempt and preserves the original job.

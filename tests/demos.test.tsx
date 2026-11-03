@@ -674,6 +674,66 @@ describe("demo builder (fake model + fake headless)", () => {
 const SVG_1 = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100"><line x1="10" y1="50" x2="290" y2="50"/></svg>';
 
 describe("visual maker (fake model + fake headless)", () => {
+	it("permits more than eight calls for a complex figure", async () => {
+		const turns = Array.from({ length: 8 }, (_, i) => ({ toolCalls: [{ toolCallId: `w${i}`, toolName: "write_svg", input: { svg: SVG_1 } }] }));
+		const engine = scriptedModel([...turns, { toolCalls: [{ toolCallId: "render", toolName: "render_svg", input: {} }] }, { text: "Inspected and complete." }]);
+		let calls = 0;
+		const result = await runVisualMaker({ brief: "Complex figure" }, { engine, headless: fakeHeadless(), onUsage: () => { calls++; } });
+		assert.equal(result.svg, SVG_1);
+		assert.equal(calls, 10);
+	});
+
+	it("retries an exhausted budget once and accounts for both attempts", async () => {
+		const engine = scriptedModel([
+			{ toolCalls: [{ toolCallId: "w1", toolName: "write_svg", input: { svg: SVG_1 } }] },
+			{ toolCalls: [{ toolCallId: "e1", toolName: "edit_svg", input: { old_text: "not present", new_text: "x" } }] },
+			{ toolCalls: [{ toolCallId: "w2", toolName: "write_svg", input: { svg: SVG_1 } }, { toolCallId: "r2", toolName: "render_svg", input: {} }] },
+			{ text: "Inspected after retry." },
+		]);
+		const activities: string[] = [];
+		let calls = 0;
+		const result = await runVisualMaker({ brief: "b" }, { engine, maxIterations: 2, headless: fakeHeadless(), onUsage: () => { calls++; }, onActivity: line => activities.push(line) });
+		assert.equal(result.svg, SVG_1);
+		assert.equal(calls, 4);
+		assert.equal(activities.filter(line => line.startsWith("Automatic retry")).length, 1);
+	});
+
+	it("stops after the second exhausted budget", async () => {
+		const engine = scriptedModel(Array.from({ length: 4 }, (_, i) => ({ toolCalls: [{ toolCallId: `w${i}`, toolName: "write_svg", input: { svg: SVG_1 } }] })));
+		let calls = 0;
+		const result = await runVisualMaker({ brief: "b" }, { engine, maxIterations: 2, headless: fakeHeadless(), onUsage: () => { calls++; } });
+		assert.equal(result.svg, "");
+		assert.match(result.notes!, /iteration limit/);
+		assert.equal(calls, 4);
+	});
+
+	it("retries a temporary provider failure but does not retry authentication failures", async () => {
+		for (const reason of ["503 Service unavailable", "Connection error.", "401 Unauthorized"]) {
+			const engine = scriptedModel([
+				{ toolCalls: [{ toolCallId: "w", toolName: "write_svg", input: { svg: SVG_1 } }, { toolCallId: "r", toolName: "render_svg", input: {} }] },
+				{ text: "Inspected." },
+			]);
+			const stream = engine.streamFn;
+			let calls = 0;
+			engine.streamFn = (...args) => { if (++calls === 1) throw new Error(reason); return stream(...args); };
+			const result = await runVisualMaker({ brief: "b" }, { engine, headless: fakeHeadless() });
+			assert.equal(calls, reason !== "401 Unauthorized" ? 3 : 1);
+			assert.equal(Boolean(result.svg), reason !== "401 Unauthorized");
+		}
+	});
+
+	it("does not restart after cancellation during the retry delay", async () => {
+		const controller = new AbortController();
+		let calls = 0;
+		const result = await runVisualMaker({ brief: "b" }, {
+			engine: scriptedModel([{ toolCalls: [{ toolCallId: "w", toolName: "write_svg", input: { svg: SVG_1 } }] }]),
+			headless: fakeHeadless(), maxIterations: 1, abortSignal: controller.signal,
+			onUsage: () => { calls++; }, onActivity: line => { if (line.startsWith("Automatic retry")) controller.abort(); },
+		});
+		assert.equal(result.svg, "");
+		assert.equal(calls, 1);
+	});
+
 	it("write → render → look → finish delivers the svg with notes", async () => {
 		const headless = fakeHeadless();
 		const model = scriptedModel([

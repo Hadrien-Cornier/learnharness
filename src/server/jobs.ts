@@ -785,27 +785,29 @@ export function retryDemoJob(chatId: string, jobId: string): JobRecord {
 	}
 	const chat = stores.chatStore.getChat(chatId);
 	const job = stores.jobStore.getJob(jobId);
-	if (!chat || !job || job.chatId !== chatId) throw new JobRetryError("Demo job not found", 404);
-	if (job.kind !== "demo" || job.status !== "error") {
-		throw new JobRetryError("Only a failed demo job can be retried", 409);
+	if (!chat || !job || job.chatId !== chatId) throw new JobRetryError("Job not found", 404);
+	if ((job.kind !== "demo" && job.kind !== "visual") || job.status !== "error") {
+		throw new JobRetryError("Only a failed demo or figure job can be retried", 409);
 	}
 	const successor = stores.jobStore.listJobs(chatId).find((candidate) => candidate.retryOf === job.id);
 	if (successor) return successor;
+	const label = job.kind === "visual" ? "figure" : "demo";
 	const input = resolveJobInput(job, chat.messages) as { title?: unknown; brief?: unknown } | null | undefined;
-	if (!input || typeof input.title !== "string" || !input.title.trim() || typeof input.brief !== "string" || !input.brief.trim()) {
-		throw new JobRetryError("The original demo request is unavailable", 409);
+	if (!input || typeof input !== "object" || typeof input.brief !== "string" || !input.brief.trim() ||
+		(job.kind === "demo" && (typeof input.title !== "string" || !input.title.trim()))) {
+		throw new JobRetryError(`The original ${label} request is unavailable`, 409);
 	}
 	const respawn = state().respawn;
-	if (!respawn) throw new JobRetryError("The demo runner is unavailable. Try again shortly.", 503);
+	if (!respawn) throw new JobRetryError(`The ${label} runner is unavailable. Try again shortly.`, 503);
 	const next = stores.jobStore.createJob({
-		kind: "demo", chatId, toolCallId: job.toolCallId, retryOf: job.id,
-		input: { title: input.title, brief: input.brief },
+		kind: job.kind, chatId, toolCallId: job.toolCallId, retryOf: job.id,
+		input: job.kind === "visual" ? { brief: input.brief } : { title: input.title, brief: input.brief },
 	});
 	try {
 		respawn(next.id);
 	} catch {
-		stores.jobStore.updateJob(next.id, { status: "error", activity: "failed", error: "The demo runner could not start" });
-		throw new JobRetryError("The demo runner could not start. Try again.", 503);
+		stores.jobStore.updateJob(next.id, { status: "error", activity: "failed", error: `The ${label} runner could not start` });
+		throw new JobRetryError(`The ${label} runner could not start. Try again.`, 503);
 	}
 	return stores.jobStore.getJob(next.id) ?? next;
 }

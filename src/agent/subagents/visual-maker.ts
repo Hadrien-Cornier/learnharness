@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type { AssistantMessage, Message, Tool, ToolResultMessage, Usage } from "@earendil-works/pi-ai";
 import { normalizeContext } from "@earendil-works/pi-ai";
 import { processImage, type ProcessImageResult } from "../image-processing/index.ts";
@@ -40,7 +41,7 @@ export interface VisualMakerOptions {
 	/** Test seam: scripted engine; production uses the visualMaker role. */
 	engine?: PiEngine;
 	headless?: HeadlessApi;
-	/** Max model rounds (write/render cycles + final answer). Default 8. */
+	/** Max model rounds (write/render cycles + final answer). Default 16 per attempt. One automatic retry is permitted. */
 	maxIterations?: number;
 	/** Live activity-line callback (updates the job record). */
 	onActivity?: (line: string) => void;
@@ -129,10 +130,34 @@ const LOOK_MESSAGE =
 const UNLOOKED_FINISH_MESSAGE =
 	"You finished without looking at a render of your final SVG. Above is its render. If it is correct and clean, reply with just your notes; otherwise call write_svg with fixes and render again.";
 
+/** Retry once for an exhausted drawing budget or a temporary provider failure.
+ * Each attempt keeps its own transcript. Usage includes both attempts.
+ * Configuration, content refusals, and cancellation never trigger a retry.
+ */
 export async function runVisualMaker(input: VisualMakerInput, opts: VisualMakerOptions = {}): Promise<VisualResult> {
+	let result = await runVisualAttempt(input, opts);
+	if (!result.svg && !opts.abortSignal?.aborted && retryableVisualFailure(result.notes ?? "")) {
+		opts.onActivity?.("Automatic retry 1/1: drawing figure again");
+		try {
+			await delay(1_000, undefined, { signal: opts.abortSignal });
+		} catch {
+			return result;
+		}
+		result = await runVisualAttempt(input, opts);
+	}
+	return result;
+}
+
+function retryableVisualFailure(notes: string): boolean {
+	if (/abort|cancel|content_filter|content filter|safety|unauthorized|forbidden|invalid.*key|no.*key|not configured|quota|insufficient|payment/i.test(notes)) return false;
+	return /^FAILED: iteration limit/.test(notes) ||
+		(/^FAILED: the maker crashed/.test(notes) && /\b(?:429|500|502|503|504)\b|rate.?limit|timed? ?out|timeout|overload|temporar|ECONNRESET|ETIMEDOUT|fetch failed|connection error|connection reset|connection closed|stream ended without a result/i.test(notes));
+}
+
+async function runVisualAttempt(input: VisualMakerInput, opts: VisualMakerOptions): Promise<VisualResult> {
 	const headless = opts.headless ?? getHeadless();
 	const brief = input.brief.trim() || "(no brief)";
-	const maxIterations = opts.maxIterations ?? 8;
+	const maxIterations = opts.maxIterations ?? 16;
 
 	const reason = headless.unavailableReason();
 	if (reason) {
@@ -164,6 +189,10 @@ export async function runVisualMaker(input: VisualMakerInput, opts: VisualMakerO
 
 	try {
 		for (let iteration = 0; iteration < maxIterations; iteration++) {
+			if (opts.abortSignal?.aborted) throw new Error("aborted");
+			if (iteration === maxIterations - 2) {
+				messages = [...messages, { role: "user", content: "Two model calls remain. Finish your changes now and render the final SVG. Use the last call to inspect that render and give your final notes.", timestamp: Date.now() }];
+			}
 			// One model call per iteration (streamSimple, no agent loop — this
 			// loop owns tool execution and the image-in-the-loop injection).
 			const result = await streamOnce(

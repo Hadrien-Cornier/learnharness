@@ -7,7 +7,7 @@ import type { LhMessage } from "../src/core/native-messages.ts";
 
 const chats: string[] = [];
 const input = { title: "Policy gradient", brief: "Compare the two gradient estimators with a mean slider." };
-function fixture(savedInput: unknown = input, kind: "demo" | "research" = "demo") {
+function fixture(savedInput: unknown = input, kind: "demo" | "visual" | "research" = "demo") {
 	const chat = chatStore.createChat("Test: retry failed demo");
 	chats.push(chat.id);
 	const job = jobStore.createJob({ chatId: chat.id, toolCallId: "call-demo", kind, input: savedInput });
@@ -49,6 +49,53 @@ describe("failed demo retry", () => {
 		assert.equal(retryDemoJob(chat.id, job.id).id, retry.id);
 		assert.deepEqual(started, [retry.id]);
 		assert.equal(jobStore.listJobs(chat.id).length, 2);
+	});
+
+	it("retries a brief-only figure once, preserves its failure, and rejects a foreign chat", () => {
+		const brief = { brief: "Show the gradient estimators in a labeled figure." };
+		const { chat, job } = fixture(brief, "visual");
+		const foreign = chatStore.createChat("Test: foreign figure retry"); chats.push(foreign.id);
+		const started: string[] = [];
+		setJobRespawn((id) => started.push(id));
+		fails(() => retryDemoJob(foreign.id, job.id), 404);
+		const retry = retryDemoJob(chat.id, job.id);
+		assert.equal(retry.kind, "visual");
+		assert.equal(retry.status, "running");
+		assert.equal(retry.retryOf, job.id);
+		assert.equal(retry.toolCallId, job.toolCallId);
+		assert.deepEqual(retry.input, brief);
+		assert.deepEqual(jobStore.getJob(job.id), job);
+		assert.equal(retryDemoJob(chat.id, job.id).id, retry.id);
+		jobStore.updateJob(retry.id, { status: "error" });
+		const second = retryDemoJob(chat.id, retry.id);
+		assert.equal(second.kind, "visual");
+		assert.equal(second.retryOf, retry.id);
+		assert.equal(retryDemoJob(chat.id, retry.id).id, second.id);
+		assert.deepEqual(started, [retry.id, second.id]);
+	});
+
+	it("rejects an invalid figure brief without creating an attempt", () => {
+		let starts = 0;
+		setJobRespawn(() => { starts++; });
+		for (const saved of [null, {}, "brief", { brief: " " }, { brief: 42 }]) {
+			const { chat, job } = fixture(saved, "visual");
+			assert.throws(() => retryDemoJob(chat.id, job.id), (error: unknown) =>
+				error instanceof JobRetryError && error.status === 409 && error.message === "The original figure request is unavailable");
+			assert.equal(jobStore.listJobs(chat.id).length, 1);
+		}
+		assert.equal(starts, 0);
+	});
+
+	it("recovers a legacy figure brief from the visual tool call", () => {
+		const { chat, job } = fixture(null, "visual");
+		jobStore.updateJob(job.id, { input: undefined });
+		const brief = { brief: "Draw a labeled comparison of the estimators." };
+		chatStore.saveMessages(chat.id, [{
+			id: "assistant-figure", role: "assistant", content: [{ type: "toolCall", id: job.toolCallId, name: "visual", arguments: brief }],
+			timestamp: 1,
+		} as unknown as LhMessage]);
+		setJobRespawn(() => {});
+		assert.deepEqual(retryDemoJob(chat.id, job.id).input, brief);
 	});
 
 	it("recovers legacy input from the original demo tool call", () => {
@@ -115,6 +162,25 @@ describe("failed demo retry", () => {
 		assert.deepEqual(jobStore.getJob(job.id), job);
 		setJobRespawn(() => {});
 		assert.equal(retryDemoJob(chat.id, failed.id).retryOf, failed.id);
+	});
+
+	it("POST retries a figure and returns its saved successor on duplicate requests", async () => {
+		const { POST } = await import("../app/api/jobs/route.ts");
+		const brief = { brief: "Draw the gradient comparison." };
+		const { chat, job } = fixture(brief, "visual");
+		const started: string[] = [];
+		setJobRespawn((id) => started.push(id));
+		const request = () => new Request("http://localhost/api/jobs", {
+			method: "POST", body: JSON.stringify({ chatId: chat.id, jobId: job.id }),
+		});
+		const response = await POST(request());
+		assert.equal(response.status, 200);
+		const first = (await response.json()).job;
+		assert.equal(first.kind, "visual");
+		assert.equal(first.status, "running");
+		assert.deepEqual(first.input, brief);
+		assert.equal((await (await POST(request())).json()).job.id, first.id);
+		assert.deepEqual(started, [first.id]);
 	});
 
 	it("POST validates requests and returns the same attempt on duplicate requests", async () => {

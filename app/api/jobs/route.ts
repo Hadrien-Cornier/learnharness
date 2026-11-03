@@ -23,7 +23,7 @@ export async function GET(req: Request) {
 }
 
 
-/** Retry the original failed demo request without adding a learner message. */
+/** Retry the original failed demo or figure request without adding a learner message. */
 export async function POST(req: Request) {
 	let body: unknown;
 	try {
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
 		return Response.json({ job: retryDemoJob(body.chatId, body.jobId) });
 	} catch (error) {
 		if (error instanceof JobRetryError) return Response.json({ error: error.message }, { status: error.status });
-		console.error("[jobs] demo retry failed", error);
-		return Response.json({ error: "Could not retry the demo. Try again." }, { status: 500 });
+		console.error("[jobs] retry failed", error);
+		return Response.json({ error: "Could not retry the job. Try again." }, { status: 500 });
 	}
 }
