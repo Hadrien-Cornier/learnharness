@@ -55,6 +55,7 @@ export type { ThinkingLevel };
 
 let collection: ReturnType<typeof createModels> | undefined;
 interface ProviderSource {
+	openaiFastMode?(): boolean;
 	sync(models: MutableModels): void;
 	isCustom(id: string): boolean;
 }
@@ -162,6 +163,11 @@ export function piEngineForSpec(spec: ResolvedModelSpec, background: boolean | (
 			const retention = cacheRetention?.();
 			const requestOptions = {
 				...options,
+				...(providerSource?.openaiFastMode?.() && ["openai", "chatgpt", "openai-codex-subscription"].includes(spec.provider)
+					? { onPayload: async (raw: unknown, payloadModel: Model<Api>) => {
+						const replacement = await options?.onPayload?.(raw, payloadModel);
+						return { ...((replacement === undefined ? raw : replacement) as Record<string, unknown>), service_tier: "priority" };
+					} } : {}),
 				...(retention !== undefined ? { cacheRetention: retention } : {}),
 				reasoning: level === "off" ? undefined : level,
 			};

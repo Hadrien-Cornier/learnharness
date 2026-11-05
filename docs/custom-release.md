@@ -72,3 +72,11 @@ Custom accepts up to 12,000 characters. Its text stays saved when you select ano
 The simple technical preset uses [ASD-STE100](https://asd-ste100.org/) principles and the [Google developer style guide](https://developers.google.com/style/highlights). It does not certify formal compliance. The Karpathy-inspired preset uses conversational explanations, a concrete question, a running example, and first-principles reasoning.
 
 An explicit voice takes priority over the shared voice prompt override. Default restores the original source voice or the enabled override. Existing override text and switches stay saved.
+
+## Codex subscription and Fast mode
+
+Settings > Providers offers a separate Codex subscription connection. Use Connect to sign in with your ChatGPT account. LearnHarness stores this connection separately from the Codex CLI and the existing ChatGPT connection. Select a model from the Codex subscription provider in your model slots or session picker to use that subscription. OpenAI API models retain API billing.
+
+Settings > Agent > OpenAI Fast mode requests priority processing for OpenAI API, ChatGPT, and Codex subscription models. The choice applies to each new model operation, including background work. Other providers and custom endpoints keep their own processing settings. Fast mode depends on model and account access. The app does not switch to an API key if subscription use fails.
+
+[OpenAI's speed guide](https://learn.chatgpt.com/docs/agent-configuration/speed) states that Fast mode consumes included subscription limits at 2.5 times the Standard rate. Purchased credits and API-key calls have separate premium pricing. This switch requests Fast mode; it does not reduce the selected reasoning level or guarantee a response time.

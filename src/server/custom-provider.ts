@@ -36,6 +36,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export function installCustomProviderSource(readAuth = customAuthState): void {
 	let fingerprint: string | undefined;
 	configureProviderSource({
+		openaiFastMode: () => readSettings()?.agent?.openaiFastMode === true,
 		isCustom: (id) => id === CUSTOM_PROVIDER.id,
 		sync(models) {
 			const cp = readSettings()?.customProvider;

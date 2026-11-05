@@ -593,6 +593,9 @@ export function AgentSection({
 	return (
 		<>
 			<SettingsGroup label="Models" testid="group-models">
+				<SettingsRow label="OpenAI Fast mode" hint="Request faster processing for OpenAI and Codex models, where available. Codex uses included limits at 2.5x the Standard rate. API-key connections use premium API pricing." testid="openai-fast-mode">
+					<Toggle checked={agent?.openaiFastMode === true} label="OpenAI Fast mode" onChange={(on) => onSectionChange({ ...agent, openaiFastMode: on })} />
+				</SettingsRow>
 				<button
 					type="button"
 					data-testid="models-advanced"

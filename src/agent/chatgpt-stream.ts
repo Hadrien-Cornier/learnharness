@@ -23,6 +23,7 @@ export function chatGPTStreamError(message: string): string {
 export function chatGPTPayload(raw: unknown, selectedModelId: string): Record<string, unknown> {
 	const payload = raw as Record<string, unknown>;
 	const out: Record<string, unknown> = { model: selectedModelId, store: false, stream: true };
+	if (payload.service_tier === "priority" || payload.service_tier === "fast" || payload.service_tier === "default") out.service_tier = payload.service_tier;
 	for (const key of ["instructions", "reasoning", "include", "text", "tool_choice", "parallel_tool_calls", "prompt_cache_key"]) {
 		if (payload[key] !== undefined) out[key] = payload[key];
 	}

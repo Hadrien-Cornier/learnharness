@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { zstdDecompressSync } from "node:zlib";
 import { after, before, test } from "node:test";
 import { normalizeContext, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import { piModels, piEngineForSpec } from "../src/agent/models.ts";
@@ -14,6 +15,7 @@ import { backgroundCaptureDir, backgroundCaptureStream, createBackgroundCapture 
 const originalSend = Object.getOwnPropertyDescriptor(process, "send"), originalConnected = Object.getOwnPropertyDescriptor(process, "connected");
 const marker = process.env.LH_DESKTOP_SERVER, secret = process.env.LH_DESKTOP_API_SECRET;
 const xaiKey = process.env.XAI_API_KEY, copilotKey = process.env.COPILOT_GITHUB_TOKEN;
+const codexToken = `fixture.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "fixture-account" } })).toString("base64url")}.fixture`;
 let revision = 1, denied = false, sends = 0;
 const context = normalizeContext({ messages: [{ role: "user", content: "Offline fixture", timestamp: 0 }] });
 function snapshot(background = true): NativeSubscriptionSnapshot {
@@ -28,7 +30,7 @@ before(async () => {
 	process.env.XAI_API_KEY = "fixture-must-never-be-used"; process.env.COPILOT_GITHUB_TOKEN = "fixture-api-route-only";
 	Object.defineProperty(process, "connected", { configurable: true, value: true });
 	Object.defineProperty(process, "send", { configurable: true, value: (message: any, callback?: () => void) => {
-		sends++; queueMicrotask(() => emit({ channel: "lh:subscriptions", id: message.id, op: message.op, ...(denied && message.op === "lease" ? { ok: false, error: "fixture expired refresh" } : { ok: true, value: message.op === "snapshot" ? snapshot() : { scope: message.scope, auth: { apiKey: "fixture-oauth-only", ...(message.scope.providerId === "github-copilot" ? { baseUrl: "https://api.business.githubcopilot.com", headers: { "x-fixture-auth": "native-retained" } } : {}) } } }) }));
+		sends++; queueMicrotask(() => emit({ channel: "lh:subscriptions", id: message.id, op: message.op, ...(denied && message.op === "lease" ? { ok: false, error: "fixture expired refresh" } : { ok: true, value: message.op === "snapshot" ? snapshot() : { scope: message.scope, auth: { apiKey: message.scope.providerId === "openai-codex" ? codexToken : "fixture-oauth-only", ...(message.scope.providerId === "github-copilot" ? { baseUrl: "https://api.business.githubcopilot.com", headers: { "x-fixture-auth": "native-retained" } } : {}) } } }) }));
 		callback?.(); return true;
 	} });
 	await refreshSubscriptionModels();
@@ -64,10 +66,11 @@ for (const p of NATIVE_SUBSCRIPTIONS) test(`${p.providerId}: every SDK transport
 		const result = await backgroundCaptureStream(engine.streamFn, capture)(engine.model, context, {
 			onPayload: (raw, selected) => { payloadObserved = true; assert.equal(selected.provider, p.providerId); return { ...raw as object, model: "caller-cannot-replace-selected" }; },
 			fetch: async (input, init) => {
-				requests++; const request = new Request(input, init), body = await request.json(); actualBody = body;
-				assert.equal(request.headers.get("authorization"), "Bearer fixture-oauth-only");
+				requests++; const request = new Request(input, init), body = request.headers.get("content-encoding") === "zstd" ? JSON.parse(zstdDecompressSync(Buffer.from(await request.arrayBuffer())).toString()) : await request.json(); actualBody = body;
+				assert.equal(request.headers.get("authorization"), `Bearer ${p.providerId === "openai-codex" ? codexToken : "fixture-oauth-only"}`);
 				assert.equal(body.model, native.id);
 				if (p.providerId === "github-copilot") { assert.equal(new URL(request.url).origin, "https://api.business.githubcopilot.com"); assert.equal(request.headers.get("x-fixture-auth"), "native-retained"); }
+				else if (p.providerId === "openai-codex") { assert.equal(new URL(request.url).origin, "https://chatgpt.com"); assert.equal(request.headers.get("chatgpt-account-id"), "fixture-account"); }
 				else assert.equal(new URL(request.url).origin, "https://api.x.ai");
 				return new Response('{"error":{"message":"private-fixture-provider-detail"}}', { status: 401, headers: { "content-type": "application/json" } });
 			},

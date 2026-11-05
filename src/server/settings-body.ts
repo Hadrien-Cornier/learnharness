@@ -152,6 +152,10 @@ export function parseAgentSettingsBody(body: unknown): SettingsBodyResult<AgentS
 	const raw = asRecord(body);
 	if (!raw) return { ok: false, error: "Invalid JSON body" };
 	const settings: AgentSettings = {};
+	if (raw.openaiFastMode !== undefined) {
+		if (typeof raw.openaiFastMode !== "boolean") return { ok: false, error: "openaiFastMode must be a boolean" };
+		settings.openaiFastMode = raw.openaiFastMode;
+	}
 	if (raw.voice !== undefined) {
 		const parsed = parseVoiceSettings(raw.voice);
 		if (!parsed.ok) return { ok: false, error: parsed.error };

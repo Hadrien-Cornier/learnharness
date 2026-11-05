@@ -7,13 +7,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { parseHTML } from "linkedom";
 import { NativeSubscriptionConnection, NativeSubscriptionUIProvider, SubscriptionConnections, COPILOT_POLICY_NOTICE, emptySubscriptionStatus } from "../components/settings/subscription-connections.tsx";
 import { ChatGPTUIProvider } from "../components/settings/chatgpt-connection.tsx";
-import type { NativeSubscriptionControlBridge, NativeSubscriptionProviderId, NativeSubscriptionStatus } from "../src/core/contracts/subscriptions.ts";
+import { NATIVE_SUBSCRIPTIONS, type NativeSubscriptionControlBridge, type NativeSubscriptionProviderId, type NativeSubscriptionStatus } from "../src/core/contracts/subscriptions.ts";
 const dom = parseHTML("<html><body></body></html>");
 Object.assign(globalThis, { window: dom.window, document: dom.document, Element: dom.window.Element, HTMLElement: dom.window.HTMLElement, CustomEvent: dom.window.CustomEvent, IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root | undefined, host: HTMLDivElement | undefined;
 function deferred() { let resolve!: () => void; const promise = new Promise<void>((done) => { resolve = done; }); return { promise, resolve }; }
 function fixture(connected = false) {
-	let statuses: NativeSubscriptionStatus[] = ["github-copilot", "xai"].map((id) => ({ ...emptySubscriptionStatus(id as NativeSubscriptionProviderId), available: true, connected, connectionId: connected ? `local-${id}` : null }));
+	let statuses: NativeSubscriptionStatus[] = NATIVE_SUBSCRIPTIONS.map(({ providerId: id }) => ({ ...emptySubscriptionStatus(id as NativeSubscriptionProviderId), available: true, connected, connectionId: connected ? `local-${id}` : null }));
 	const listeners = new Set<() => void>(), login = deferred();
 	const calls = { login: [] as unknown[][], cancel: 0, open: [] as unknown[][], consent: [] as unknown[][], disconnect: [] as string[], retry: [] as string[] };
 	function push(id: NativeSubscriptionProviderId, next: Partial<NativeSubscriptionStatus>) {
@@ -33,7 +33,7 @@ function fixture(connected = false) {
 }
 async function mount() {
 	host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-	await act(async () => root!.render(<NativeSubscriptionUIProvider><NativeSubscriptionConnection providerId="github-copilot" /><NativeSubscriptionConnection providerId="xai" /></NativeSubscriptionUIProvider>));
+	await act(async () => root!.render(<NativeSubscriptionUIProvider>{NATIVE_SUBSCRIPTIONS.map(({ providerId }) => <NativeSubscriptionConnection key={providerId} providerId={providerId} />)}</NativeSubscriptionUIProvider>));
 }
 function maybeButton(text: string, scope: ParentNode = document) { return [...scope.querySelectorAll<HTMLButtonElement>("button")].find((element) => element.textContent === text); }
 function button(text: string, scope: ParentNode = document) { const found = maybeButton(text, scope); assert(found, `missing button ${text}`); return found; }
@@ -45,14 +45,20 @@ async function click(element: HTMLElement) { assert(element); await act(async ()
 async function connectionStep(id: string) { await click(button("Connect", row(id))); await click(button("Continue", dialog())); }
 afterEach(async () => { await act(async () => root?.unmount()); host?.remove(); root = undefined; host = undefined; delete window.lh; });
 
-test("three compact rows render in approved order with no browser-only sign-in or fabricated identities", () => {
+test("subscription rows include Codex and keep subscription identity separate from API connections", () => {
 	const html = renderToStaticMarkup(<ChatGPTUIProvider><NativeSubscriptionUIProvider><SubscriptionConnections /></NativeSubscriptionUIProvider></ChatGPTUIProvider>);
-	assert(html.indexOf('data-testid="chatgpt-connection"') < html.indexOf('data-testid="github-copilot-connection"'));
-	assert(html.indexOf('data-testid="github-copilot-connection"') < html.indexOf('data-testid="xai-connection"'));
-	assert.equal((html.match(/>Connect<\/button>/g) ?? []).length, 3);
+	const document = parseHTML(`<html><body>${html}</body></html>`).document;
+	const rows = [...document.querySelector('[data-testid="subscription-connections"]')!.children];
+	assert.deepEqual(rows.map((row) => row.getAttribute("data-testid")), ["chatgpt-connection", "openai-codex-connection", "github-copilot-connection", "xai-connection"]);
+	assert(rows[1]!.textContent?.includes("OpenAI Codex"));
+	for (const row of rows) {
+		const connect = row.querySelector("button");
+		assert.equal(connect?.textContent, "Connect");
+		assert(connect?.hasAttribute("disabled"), "browser-only rendering cannot start sign-in");
+	}
 	assert(!html.includes("@")); assert(!html.includes("Add accounts"));
 });
-for (const [id, label] of [["github-copilot", "GitHub Copilot"], ["xai", "Grok"]] as const) test(`${id}: disclosure and connection are separate steps with no duplicated content or early authorization`, async () => {
+for (const [id, label] of [["openai-codex", "OpenAI Codex"], ["github-copilot", "GitHub Copilot"], ["xai", "Grok"]] as const) test(`${id}: disclosure and connection are separate steps with no duplicated content or early authorization`, async () => {
 	const f = fixture(); await mount(); await click(button("Connect", row(id)));
 	assert.equal(dialog().querySelector("h2")?.textContent, label);
 	assert(dialog().querySelector('[data-testid="subscription-privacy-notice"]')); assert(!toggle());

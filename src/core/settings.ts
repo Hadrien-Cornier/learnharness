@@ -343,6 +343,8 @@ export interface DictationSettings {
 
 /** Agent settings — everything about the non-conversation machinery. */
 export interface AgentSettings {
+	/** Request priority processing on OpenAI and Codex connections. Absent = off. */
+	openaiFastMode?: boolean;
 	/** Answer voice for teacher, prober, and practice. Absent keeps the original voice. */
 	voice?: VoiceSettings;
 	/** Background-role model/thinking overrides (absent role = config pin). */
@@ -693,6 +695,7 @@ function sanitizeBooleanMap(raw: unknown): Record<string, boolean> | undefined {
 
 function sanitizeAgent(raw: Record<string, unknown>): AgentSettings {
 	const out: AgentSettings = {};
+	if (typeof raw.openaiFastMode === "boolean") out.openaiFastMode = raw.openaiFastMode;
 	if (raw.voice !== undefined) {
 		const parsed = parseVoiceSettings(raw.voice);
 		if (parsed.ok) out.voice = parsed.voice;
