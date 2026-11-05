@@ -22,6 +22,7 @@
  *   src/store/prompt-overrides.ts (segment list derived from source).
  */
 
+import type { VoiceSettings } from "./voices.ts";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ModelRole } from "../../config.ts";
 import type { ChatSettings } from "./contracts/chat.ts";
@@ -75,6 +76,7 @@ export interface EffectiveSettings {
 	general: Required<GeneralSettings>;
 	dictation: Required<DictationSettings>;
 	agent: {
+		voice?: VoiceSettings;
 		models: Record<BackgroundModelRole, EffectiveModelSpec | undefined>;
 		/** Delta map as stored — consumers resolve absent key → enabled. */
 		tools: Record<string, boolean>;
@@ -192,6 +194,7 @@ export function resolveSettings(record: UserSettings | null): EffectiveSettings 
 		},
 		agent: {
 			models,
+			...(agent.voice ? { voice: agent.voice } : {}),
 			tools: agent.tools ?? {},
 			prompts: agent.prompts ?? {},
 			search: agent.search ?? {},

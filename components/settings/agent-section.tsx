@@ -892,6 +892,7 @@ export function AgentSection({
 			</SettingsGroup>
 
 			<SettingsGroup label="System prompts" testid="group-prompts">
+				{agent?.voice && agent.voice.preset !== "default" && <p className="text-xs text-muted-foreground/70">Your selected voice controls the writing style. Choose Default in Voice to use a voice override here.</p>}
 				{prompts === null ? (
 					<p className="text-xs text-muted-foreground/70">Loading prompt segments…</p>
 				) : (

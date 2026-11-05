@@ -89,3 +89,5 @@ export * from "./coverage.ts";
 export * from "./session-markdown.ts";
 
 export { toolResultDisplayOutput, toolResultImages, type ToolResultImage } from "./tool-result-output.ts";
+
+export { VOICE_PRESETS, MAX_VOICE_INSTRUCTIONS_CHARS, type VoicePresetId, type VoiceSettings } from "./voices.ts";

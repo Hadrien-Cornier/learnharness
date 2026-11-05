@@ -43,6 +43,7 @@ import { useAppearance } from "./appearance.tsx";
 import { SettingsSection } from "./controls.tsx";
 import { UpdateSettings } from "./update-settings.tsx";
 import { AgentSection } from "./agent-section.tsx";
+import { VoiceSection } from "./voice-section.tsx";
 import type { ModelsSettings } from "@/src/core";
 import { MENU_CLOSE_EVENT, MENU_OPEN_EVENT } from "@/components/menu-shell";
 import { notifySettingsSaved } from "@/components/settings-signal";
@@ -59,6 +60,7 @@ import { NativeSubscriptionUIProvider } from "./subscription-connections.tsx";
 const SECTIONS = [
 	{ id: "keys", label: "Providers" },
 	{ id: "agent", label: "Agent" },
+	{ id: "voice", label: "Voice" },
 	{ id: "appearance", label: "Appearance" },
 	{ id: "graph", label: "Graph" },
 	{ id: "keyboard", label: "Keyboard", hint: "Stored on this device" },
@@ -240,7 +242,7 @@ export function SettingsDialogBody({
 					error?: string;
 				};
 				setError(`${section}: ${detail.error ?? res.status}`);
-				return;
+				return false;
 			}
 			// Server truth, never the request body (fix wave, owner repro):
 			// the models section clamps pinned thinking levels on write
@@ -257,6 +259,7 @@ export function SettingsDialogBody({
 			notifySettingsSaved(section);
 			if (section === "appearance")
 				onAppearanceChange(body as AppearanceSettings);
+			return true;
 		},
 		[onAppearanceChange],
 	);
@@ -371,6 +374,11 @@ export function SettingsDialogBody({
 							{active === "keys" && (
 								<SettingsSection title="Providers" testid="section-keys">
 									<KeysSection initialRow={initialRow ?? undefined} />
+								</SettingsSection>
+							)}
+							{active === "voice" && (
+								<SettingsSection title="Voice" testid="section-voice">
+									<VoiceSection voice={record.agent?.voice} onSave={(voice) => write("agent", { ...record.agent, voice })} />
 								</SettingsSection>
 							)}
 							{active === "agent" && (

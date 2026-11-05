@@ -62,3 +62,13 @@ Automatic search uses the regular DuckDuckGo Lite search page over HTTP. It need
 Settings also offer an explicit DuckDuckGo choice. Tavily and Brave remain optional API providers and require an explicit choice and a key. Automatic search never selects a paid provider.
 
 Public search can return rate limits or human-verification pages. The tool reports these as failures, rather than treating them as no results.
+
+## Answer voices
+
+Settings > Voice offers Default, ASD-STE100 + Google technical style, Karpathy-inspired, and Custom. Select a voice, then use Save voice. A saved choice applies to the next answer in existing and new teaching and practice sessions. A running answer keeps its current instructions.
+
+Custom accepts up to 12,000 characters. Its text stays saved when you select another preset, including Default. These settings change the tutor's prose style. Accuracy, teaching behavior, tool formats, and mathematical syntax keep their own instructions.
+
+The simple technical preset uses [ASD-STE100](https://asd-ste100.org/) principles and the [Google developer style guide](https://developers.google.com/style/highlights). It does not certify formal compliance. The Karpathy-inspired preset uses conversational explanations, a concrete question, a running example, and first-principles reasoning.
+
+An explicit voice takes priority over the shared voice prompt override. Default restores the original source voice or the enabled override. Existing override text and switches stay saved.

@@ -46,3 +46,9 @@ See [architecture](../../../docs/architecture.md#3-teaching-lifecycle-and-tools)
 - Match tool names and input fields to the actual schemas in `src/agent/tools.ts` and `src/agent/tools/`. Agents share history, not identical toolsets: prober `probe`/`recall` and teacher `quiz`/`explain` deliberately differ. Do not imply a tool is available merely because another phase uses it.
 - Keep always-in-context text concise. Avoid duplicating the base, other fragments, tool schemas or runtime reference documentation.
 - Verify composition/override behavior against `tests/prompt-overrides.test.ts` and the agent-flow tests when changing loader behavior. Prompt assets must remain included in standalone packaging (`scripts/build-server.mjs`).
+
+## Answer voice setting
+
+`agent.voice` supplies a preset or custom writing instructions. The runtime replaces only `shared/10-voice.md` with the selected voice for teacher, prober, and practice. Default or an absent selection retains normal source/override resolution. Existing override files and switches stay intact. The selected voice controls prose tone, length, and organization, including over general formatting preferences; accuracy, teaching doctrine, tool formats, and math delimiters keep their own rules.
+
+The chat handler resolves the saved selection before each turn. Prompt token estimates include the active voice. Changes do not rewrite an agent that already runs.
