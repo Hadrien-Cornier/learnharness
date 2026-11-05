@@ -17,7 +17,8 @@
  * 127.0.0.1 on a kernel-assigned
  * free port, NODE_ENV=production, a THROWAWAY LH_DATA_DIR and an EMPTY
  * LH_AUTH_FILE under os.tmpdir() (no real keys or data ever touch it) —
- * polls GET / until 200, then probes the GET-only API surface (graph /
+ * polls GET / until 200, verifies the client scripts named by its HTML,
+ * then probes the GET-only API surface (graph /
  * models / settings — no side effects). Any non-200, an early server
  * exit, or a 30s boot timeout fails the gate and prints the server's own
  * log tail for diagnosis. The child is ALWAYS killed before exit — a
@@ -76,6 +77,50 @@ function get(url) {
 			resolve(0);
 		});
 	});
+}
+
+/** Read a local response with a strict byte limit and request deadline. */
+function readResponse(url, maxBytes) {
+	return new Promise((resolve, reject) => {
+		const req = http.get(url, (res) => {
+			let bytes = 0;
+			const chunks = [];
+			res.on("data", (chunk) => {
+				bytes += chunk.length;
+				if (bytes > maxBytes) {
+					req.destroy(new Error(`GET ${new URL(url).pathname} exceeded ${maxBytes} bytes`));
+					return;
+				}
+				chunks.push(chunk);
+			});
+			res.on("error", reject);
+			res.on("end", () => resolve({ status: res.statusCode ?? 0, type: res.headers["content-type"] ?? "", body: Buffer.concat(chunks).toString("utf8") }));
+		});
+		req.on("error", reject);
+		const deadline = setTimeout(() => req.destroy(new Error(`GET ${new URL(url).pathname} timed out`)), 5000);
+		req.on("close", () => clearTimeout(deadline));
+	});
+}
+
+/** A root 200 is insufficient: stale HTML can name deleted client chunks. */
+async function verifyClientScripts(origin) {
+	const root = await readResponse(origin + "/", 4 * 1024 * 1024);
+	if (root.status !== 200 || !root.type.includes("text/html")) throw new Error(`GET / returned ${root.status} ${root.type}, expected HTML`);
+	const scripts = new Set();
+	for (const tag of root.body.matchAll(/<script\b[^>]*>/gi)) {
+		const src = /\bsrc\s*=\s*["']([^"']+)["']/i.exec(tag[0])?.[1];
+		if (!src) continue;
+		const target = new URL(src.replace(/&amp;/g, "&"), origin);
+		if (target.origin === origin && target.pathname.startsWith("/_next/static/")) scripts.add(target.href);
+	}
+	if (!scripts.size) throw new Error("GET / contains no local Next.js client scripts");
+	for (const script of scripts) {
+		const response = await readResponse(script, 8 * 1024 * 1024);
+		if (response.status !== 200 || !/(?:java|ecma)script/i.test(response.type) || !response.body.trim()) {
+			throw new Error(`GET ${new URL(script).pathname} → ${response.status} ${response.type} (expected nonempty JavaScript)`);
+		}
+	}
+	console.log(`[smoke-server] client scripts: ${scripts.size} referenced scripts return JavaScript → 200`);
 }
 
 async function main() {
@@ -163,7 +208,10 @@ async function main() {
 		if (boot !== 200) throw new Error(`server never answered 200 on ${url} (last status: ${boot})`);
 		console.log(`[smoke-server] boot ok: GET / → 200 (${url})`);
 
-		// 2) API surface: every probe must be 200.
+		// 2) Client assets must match the HTML from this exact server payload.
+		await verifyClientScripts(url);
+
+		// 3) API surface: every probe must be 200.
 		for (const route of PROBES) {
 			const status = await get(url + route);
 			if (status !== 200) throw new Error(`GET ${route} → ${status} (expected 200)`);
