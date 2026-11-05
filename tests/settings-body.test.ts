@@ -67,6 +67,9 @@ describe("parseAgentSettingsBody", () => {
 	});
 
 	it("search: engine pin is tavily|brave; anything else is a 400 (search wave, 2026-09-20)", () => {
+		const free = parseAgentSettingsBody({ search: { engine: "duckduckgo" } });
+		assert.ok(free.ok);
+		assert.deepEqual(free.settings.search, { engine: "duckduckgo" });
 		const ok = parseAgentSettingsBody({ search: { engine: "tavily" } });
 		assert.ok(ok.ok);
 		assert.deepEqual(ok.settings.search, { engine: "tavily" });

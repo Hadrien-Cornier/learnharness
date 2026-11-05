@@ -18,13 +18,8 @@ import TurndownService from "turndown";
  *                                                          Jina Reader fallback for
  *                                                          JS-rendered pages)
  *
- * SEARCH REWIRING (search port wave, 2026-09-20): the Google CSE backend is
- * retired — web_search now runs on the injected search port (core/search.ts).
- * The live adapter (Tavily/Brave — server/search.ts) arrives as a DEPENDENCY
- * (import law: this tool depends on the core port, never server code). NO
- * silent fallback (owner decision): provider absent → search is honestly
- * unavailable, and the composition root drops the research dispatch tool on
- * the same signal (the jobTools seam, src/agent/tools/jobs.ts).
+ * Search uses the injected provider. Public DuckDuckGo search needs no key.
+ * Explicit API providers remain optional.
  *
  * Tool contract: NEVER throw into the agent loop — missing provider and
  * every failure path return a clear error STRING as the tool output, so the
@@ -148,7 +143,7 @@ export function createWebTools(search: () => SearchProvider | null): Record<stri
 				if (!provider) {
 					return (
 						"web_search is not available: no search engine is configured. " +
-						"Set a Tavily or Brave search API key in settings. Report in your brief that web search is unavailable."
+						"Select DuckDuckGo (free, no API key) in settings. Report in your brief that web search is unavailable."
 					);
 				}
 				try {

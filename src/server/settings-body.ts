@@ -190,8 +190,8 @@ export function parseAgentSettingsBody(body: unknown): SettingsBodyResult<AgentS
 		const search = asRecord(raw.search);
 		if (!search) return { ok: false, error: "search must be an object" };
 		if (search.engine !== undefined) {
-			if (search.engine !== "tavily" && search.engine !== "brave") {
-				return { ok: false, error: 'search.engine must be "tavily" or "brave"' };
+			if (search.engine !== "duckduckgo" && search.engine !== "tavily" && search.engine !== "brave") {
+				return { ok: false, error: 'search.engine must be "duckduckgo", "tavily", or "brave"' };
 			}
 			settings.search = { engine: search.engine };
 		}

@@ -1,25 +1,7 @@
-/**
- * The search engines' server composition (search port + model slots wave,
- * 2026-09-20): the Tavily + Brave adapters behind the core port
- * (core/search.ts) + the live-engine resolution the settings UI and the
- * agent-layer tool both read.
- *
- * Owner decisions (2026-09-20) baked in:
- *  - NO default engine: an engine is live iff its key is present (auth
- *    store or env — env wins, keyed via server/keys.ts keyValue).
- *  - Setting a key is ALL the user does — auto-detection: explicit
- *    agent.search.engine pins the preference (when BOTH keys are present
- *    the preference order is Tavily → Brave); without a pin, whichever
- *    engine has a key is the engine.
- *  - An explicit choice does NOT silently fall back to the other engine:
- *    engine pinned but its key missing = honestly unavailable (reason
- *    says so) — no guessing what the user meant.
- *
- * The adapters are injected dependencies (fetch-shaped) so the agent-layer
- * tool depends on the PORT only and tests never touch the network.
- */
+/** Compose free public search by default; paid APIs require an explicit choice. */
 
 import type { SearchEngineId, SearchHit, SearchProvider, SearchStatus } from "../core/search.ts";
+import { freeSearchProvider } from "./free-search.ts";
 import { keyValue } from "./keys.ts";
 import { effectiveSettings } from "./stores.ts";
 
@@ -108,9 +90,7 @@ export function braveProvider(apiKey: string, fetchFn: FetchLike = fetch): Searc
 	};
 }
 
-/** The engines this wave ships, in PREFERENCE order (both keys present,
- *  no explicit pin → the first live engine wins; owner decision
- *  2026-09-20: Tavily first — the AI-native search API the wave chose). */
+/** Optional API providers. Free public search is the automatic default. */
 const ENGINE_ORDER: ReadonlyArray<{ id: SearchEngineId; envVar: string }> = [
 	{ id: "tavily", envVar: "TAVILY_API_KEY" },
 	{ id: "brave", envVar: "BRAVE_API_KEY" },
@@ -124,15 +104,16 @@ function engineKey(id: SearchEngineId): string | null {
 	return value ? value : null;
 }
 
-/** Resolve the search state PURELY from the given pins (testable): the
- *  explicit engine (if pinned) wins but must be keyed; absent pin → first
- *  keyed engine in preference order. Never throws. */
+/** Free public search is automatic. Explicit API providers require their own key. */
 export function resolveSearchEngineFor(
 	pinned: SearchEngineId | undefined,
 	/** Per-engine live keys (absent engine = absent property is fine). */
 	keys: Partial<Record<SearchEngineId, string | undefined>>,
 ): SearchStatus & { key: string | null } {
 	const pinnedKey = pinned ? keys[pinned] ?? null : null;
+	if (!pinned || pinned === "duckduckgo") {
+		return { available: true, engine: "duckduckgo", reason: "DuckDuckGo public web search (free, no API key)", key: null };
+	}
 	if (pinned) {
 		if (!pinnedKey) {
 			return {
@@ -144,16 +125,7 @@ export function resolveSearchEngineFor(
 		}
 		return { available: true, engine: pinned, reason: `search engine: ${pinned} (chosen)`, key: pinnedKey };
 	}
-	for (const { id } of ENGINE_ORDER) {
-		const key = keys[id] ?? null;
-		if (key) return { available: true, engine: id, reason: `search engine: ${id} (auto)`, key };
-	}
-	return {
-		available: false,
-		engine: null,
-		reason: "no search engine configured — set a Tavily or Brave search API key",
-		key: null,
-	};
+	return { available: false, engine: null, reason: "Search provider unavailable", key: null };
 }
 
 /** The live search state (the honest availability signal): reads the
@@ -184,6 +156,7 @@ export function searchProvider(): SearchProvider | null {
 		tavily: engineKey("tavily") ?? undefined,
 		brave: engineKey("brave") ?? undefined,
 	});
+	if (resolved.engine === "duckduckgo") return freeSearchProvider();
 	if (!resolved.available || !resolved.key) return null;
 	return resolved.engine === "tavily" ? tavilyProvider(resolved.key) : braveProvider(resolved.key);
 }

@@ -14,31 +14,21 @@ import { describe, it } from "node:test";
 import { resolveSearchEngineFor, tavilyProvider, braveProvider } from "../src/server/search.ts";
 
 describe("resolveSearchEngineFor (the auto-detect decision)", () => {
-	it("no keys: honestly unavailable, no default", () => {
+	it("no keys: free public search is available", () => {
 		const out = resolveSearchEngineFor(undefined, {});
-		assert.ok(!out.available);
-		assert.equal(out.engine, null);
-		assert.match(out.reason, /no search engine configured/i);
-	});
-
-	it("a key alone is enough — no engine choice needed", () => {
-		const tav = resolveSearchEngineFor(undefined, { tavily: "tvly-throwaway-key-00001" });
-		assert.ok(tav.available);
-		assert.equal(tav.engine, "tavily");
-		assert.match(tav.reason, /auto/);
-
-		const brv = resolveSearchEngineFor(undefined, { brave: "brave-throwaway-key-00001" });
-		assert.ok(brv.available);
-		assert.equal(brv.engine, "brave");
-	});
-
-	it("both keys, no pin: preference order — Tavily first (owner decision)", () => {
-		const out = resolveSearchEngineFor(undefined, {
-			tavily: "tvly-throwaway-key-00001",
-			brave: "brave-throwaway-key-00001",
-		});
 		assert.ok(out.available);
-		assert.equal(out.engine, "tavily");
+		assert.equal(out.engine, "duckduckgo");
+		assert.equal(out.key, null);
+	});
+
+	it("automatic search stays free even when paid keys exist", () => {
+		const out = resolveSearchEngineFor(undefined, { tavily: "test-key", brave: "test-key" });
+		assert.equal(out.engine, "duckduckgo");
+		assert.equal(out.key, null);
+	});
+
+	it("an explicit free provider needs no key", () => {
+		assert.equal(resolveSearchEngineFor("duckduckgo", {}).available, true);
 	});
 
 	it("the explicit pin wins when its key is present", () => {

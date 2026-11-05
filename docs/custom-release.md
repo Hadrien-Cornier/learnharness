@@ -54,3 +54,11 @@ Each job permits two automatic retries after temporary provider failures or an e
 The per-attempt call limits are 24 for Research, Figure, and PDF, and 32 for Demo. A Figure reminder asks the model to finish its final render and inspection before the limit. A budget cannot turn unfinished research or PDF text into a completed brief.
 
 The internal extractor and auditor retry individual failed model calls with the same delay policy. They keep completed tool work and collector state. Failed partial tool calls never execute. Extraction has eight submit turns, and audit has 24 exploration turns.
+
+## Free web search
+
+Automatic search uses the regular DuckDuckGo Lite search page over HTTP. It needs no account or API key. Research jobs receive result titles, source URLs, and snippets.
+
+Settings also offer an explicit DuckDuckGo choice. Tavily and Brave remain optional API providers and require an explicit choice and a key. Automatic search never selects a paid provider.
+
+Public search can return rate limits or human-verification pages. The tool reports these as failures, rather than treating them as no results.
