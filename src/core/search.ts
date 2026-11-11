@@ -1,4 +1,4 @@
-/** Search providers. DuckDuckGo uses regular public search pages without an API key. */
+/** Search providers include free public search and explicit keyed adapters. */
 
 /** One search result row — the shape every adapter must produce (the
  *  researcher's tool contract; same fields the old Google adapter emitted). */
@@ -8,8 +8,23 @@ export interface SearchHit {
 	snippet: string;
 }
 
-/** The engine ids this wave ships (the catalog: curated keys + adapters). */
-export type SearchEngineId = "duckduckgo" | "tavily" | "brave";
+/** Search engines in automatic preference order. Keep existing preferences
+ * stable when adding an engine: an explicit pin always wins. */
+export const SEARCH_ENGINES = [
+	{ id: "duckduckgo", label: "DuckDuckGo (free)", envVar: "" },
+	{ id: "tavily", label: "Tavily", envVar: "TAVILY_API_KEY" },
+	{ id: "brave", label: "Brave", envVar: "BRAVE_API_KEY" },
+	{ id: "exa", label: "Exa", envVar: "EXA_API_KEY" },
+	{ id: "firecrawl", label: "Firecrawl", envVar: "FIRECRAWL_API_KEY" },
+	{ id: "ollama", label: "Ollama", envVar: "OLLAMA_API_KEY" },
+] as const;
+
+export type SearchEngineId = (typeof SEARCH_ENGINES)[number]["id"];
+
+/** The read/write guards' membership check (settings record + PUT body). */
+export function isSearchEngineId(value: unknown): value is SearchEngineId {
+	return SEARCH_ENGINES.some((engine) => engine.id === value);
+}
 
 /** A live search engine: an id (for status/labels) + one operation. The
  *  adapters own their wire protocol (fetch, timeouts, error mapping) —

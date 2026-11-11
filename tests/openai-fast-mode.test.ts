@@ -124,7 +124,7 @@ test("the Agent settings show the saved Fast mode choice and its usage cost", ()
 	for (const openaiFastMode of [false, true]) {
 		const html = renderToStaticMarkup(React.createElement(AgentSection, {
 			agent: { openaiFastMode }, models: undefined, graph: undefined, compaction: undefined,
-			onSectionChange: () => {}, onModelsChange: () => {}, onCompactionChange: () => {},
+			onSectionChange: () => true, onModelsChange: () => {}, onCompactionChange: () => true,
 		}));
 		assert.ok(html.includes('data-testid="openai-fast-mode"'));
 		assert.ok(html.includes('aria-label="OpenAI Fast mode"'));
