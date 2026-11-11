@@ -181,12 +181,12 @@ test("raw PDF + visual loops share request admission with the native worker runn
 		try { await hold; return answer(); } finally { active--; }
 	}]);
 	const pdf = runPdfReaderAgent({ path: path.join(import.meta.dirname, "fixtures/sample-3page.pdf"), question: "Synthetic?" }, {
-		engine: observed(() => entered.resolve(), gate.promise), headless, maxIterations: 1, onUsage: () => { pdfUsage++; },
+		engine: observed(() => entered.resolve(), gate.promise), headless, maxIterations: 1, retryDelaysMs: [], onUsage: () => { pdfUsage++; },
 	});
 	const work: Promise<unknown>[] = [pdf];
 	try {
 		await entered.promise;
-		work.push(runVisualMaker({ brief: "Synthetic" }, { engine: observed(() => { visualCalls++; }), headless, maxIterations: 1, onUsage: () => { visualUsage++; } }));
+		work.push(runVisualMaker({ brief: "Synthetic" }, { engine: observed(() => { visualCalls++; }), headless, maxIterations: 1, retryDelaysMs: [], onUsage: () => { visualUsage++; } }));
 		work.push(run(observed(() => { nativeCalls++; })));
 		await flush();
 		assert.equal(visualCalls, 0, "queued visual request never invokes transport");
