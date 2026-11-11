@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useRef, type RefObject } from "react";
+import { createContext, useCallback, useContext, useRef, type RefObject } from "react";
 
 export interface SessionViewState {
 	draft?: string;
@@ -42,5 +42,5 @@ export function usePaneCommand() {
 	const active = usePaneActive();
 	const activeRef = useRef(active);
 	activeRef.current = active;
-	return () => activeRef.current;
+	return useCallback(() => activeRef.current, []);
 }

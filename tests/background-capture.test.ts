@@ -189,7 +189,7 @@ for (const id of ["chat:xiaomi/mimo-v2.6-pro", "chat:deepseek/deepseek-v4.1-flas
 
 test("a failed continuation retains its request/error, not the previous reply or tool result", async (t) => {
 	const dir = setup(t);
-	await assert.rejects(runSubagent(tools, { role: "auditor", engine: fakeEngine(true), systemPrompt: "Fixture", prompt: "Fixture", maxTurns: 3 }), /waiting for response headers/);
+	await assert.rejects(runSubagent(tools, { role: "auditor", engine: fakeEngine(true), systemPrompt: "Fixture", prompt: "Fixture", maxTurns: 3, retryProviderCalls: false }), /waiting for response headers/);
 	const result = readCapture(dir);
 	assert.equal(result.request.turn, 2);
 	assert.match(JSON.stringify(result.request.payload), /SYNTHETIC_SESSION_INDEX/);
@@ -322,7 +322,7 @@ for (const role of ["pdfReader", "visualMaker"] as const) {
 	}
 	test(`${role} actual entrypoint retains provider failures`, async (t) => {
 		const dir = setup(t, role);
-		const opts = { engine: fakeEngine(true), headless };
+		const opts = { engine: fakeEngine(true), headless, retryDelaysMs: [] };
 		const result = role === "pdfReader"
 			? await runPdfReaderAgent({ path: path.join(import.meta.dirname, "fixtures/sample-3page.pdf"), question: "Fixture?" }, opts)
 			: await runVisualMaker({ brief: "Fixture" }, opts);
