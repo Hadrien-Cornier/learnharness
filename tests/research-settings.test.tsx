@@ -76,7 +76,7 @@ it("keyless settings offer free search and keep Research interactive", async () 
 	}
 });
 
-for (const { id, label, envVar } of SEARCH_ENGINES) {
+for (const { id, label, envVar } of SEARCH_ENGINES.filter(engine => engine.envVar)) {
 it(`a ${label}-only key enables the engine menu and selecting ${label} saves the pin`, async () => {
 	const dom = parseHTML("<html><body><div id='root'></div></body></html>");
 	Object.assign(dom.window, { innerWidth: 1280, innerHeight: 800 });
