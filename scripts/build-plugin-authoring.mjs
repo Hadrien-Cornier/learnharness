@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { crc32 } from "node:zlib";
+import { pluginAppVersion } from "../src/core/plugins.ts";
 
 export const AUTHORING_DOCS = [
 	"plugin-authoring.md", "plugin-architecture.md", "plugin-question-contract.md",
@@ -105,7 +106,8 @@ export function buildPluginAuthoring({ root = path.resolve(import.meta.dirname, 
 	const publicDirectory = path.join(base, "public", "plugin-authoring");
 	ownedOutput(root, directory); ownedOutput(root, publicDirectory);
 	const app = JSON.parse(fs.readFileSync(sourcePath(root, path.join(root, "package.json"), "file"), "utf8"));
-	if (!/^\d+\.\d+\.\d+$/.test(app.version)) throw Error("Authoring requires a numeric app version");
+	const appVersion = pluginAppVersion(app.version, app.customBuild);
+	if (!/^\d+\.\d+\.\d+$/.test(appVersion)) throw Error("Authoring requires a numeric app version");
 	const stage = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lh-authoring-")));
 	try {
 		copyFile(root, path.join(root, "LICENSE"), path.join(stage, "LICENSE"));
@@ -117,7 +119,7 @@ export function buildPluginAuthoring({ root = path.resolve(import.meta.dirname, 
 			copyDirectory(root, path.join(source, "dist"), path.join(destination, "dist"));
 			const manifestPath = path.join(destination, "dist", "manifest.json"), manifest = JSON.parse(fs.readFileSync(sourcePath(stage, manifestPath, "file"), "utf8"));
 			if (manifest.id !== id || manifest.apiVersion !== 1) throw Error(`Invalid authoring example: ${id}`);
-			manifest.minAppVersion = app.version;
+			manifest.minAppVersion = appVersion;
 			fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, "\t") + "\n");
 		}
 		// Export canonical source references, never local builds, SDKs, dependencies or learner data.
@@ -135,7 +137,7 @@ export function buildPluginAuthoring({ root = path.resolve(import.meta.dirname, 
 		const reference = spawnSync(process.execPath, [sourcePath(root, path.join(root, "scripts", "build-plugin-api-reference.mjs"), "file"), path.join(stage, "types"), path.join(stage, "docs", "plugin-api")], { cwd: root, stdio: "inherit" });
 		if (reference.error || reference.status !== 0) throw Error(`Authoring API reference generation failed: ${reference.error ?? reference.status}`);
 		const sdk = JSON.parse(fs.readFileSync(sourcePath(stage, path.join(stage, "types", "package.json"), "file"), "utf8"));
-		const metadata = { appVersion: app.version, pluginApiVersion: 1, sdkVersion: sdk.version };
+		const metadata = { appVersion, pluginApiVersion: 1, sdkVersion: sdk.version };
 		fs.writeFileSync(path.join(stage, "bundle.json"), JSON.stringify(metadata, null, "\t") + "\n");
 		const entries = files(stage).map(entry => ({ ...entry, name: "learnharness-plugins/" + entry.name }));
 		const archive = createAuthoringZip(entries);

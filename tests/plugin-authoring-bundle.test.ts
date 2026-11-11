@@ -76,6 +76,17 @@ function fixture(run: (root: string) => void) {
 	} finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 
+it("uses the upstream base version for custom authoring bundles", () => fixture(root => {
+	fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ version: "9.8.7-hc.1", customBuild: true }));
+	const built = buildPluginAuthoring({ root });
+	assert.equal(built.metadata.appVersion, "9.8.7");
+	const entries = unzip(fs.readFileSync(built.archive));
+	for (const id of AUTHORING_EXAMPLES) {
+		const manifest = JSON.parse(entries.get(`learnharness-plugins/examples/plugins/${id}/dist/manifest.json`)!.toString());
+		assert.equal(manifest.minAppVersion, "9.8.7");
+	}
+}));
+
 it("produces the complete rooted skill, matching versions, current example layout and no repository-only files", () => fixture(root => {
 	const built = buildPluginAuthoring({ root });
 	assert.deepEqual(built.metadata, { appVersion: "9.8.7", pluginApiVersion: 1, sdkVersion: "1.0.0" });
