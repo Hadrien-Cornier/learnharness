@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { PATHS, GRAPH_FORMAT_FILE, RENDER_SETTINGS_FILE } from "../../config.ts";
 import packageJson from "../../package.json";
 import { emit, subscribe } from "../core/events.ts";
+import { pluginAppVersion } from "../core/plugins.ts";
 import { createPluginAgentService } from "../agent/plugin-agents.ts";
 import { createPluginWorkerService } from "../agent/plugin-workers.ts";
 import { registerJobAbort, unregisterJobAbort } from "../agent/subagents/aborts.ts";
@@ -51,7 +52,7 @@ function runtime(): Runtime {
 	});
 	const installationErrors: Record<string, string> = Object.create(null);
 	const host = createPluginHost({
-		directory: pluginDirectory, core, appVersion: packageJson.customBuild ? packageJson.version.replace(/-hc\.\d+$/, "") : packageJson.version, installationErrors,
+		directory: pluginDirectory, core, appVersion: pluginAppVersion(packageJson.version, packageJson.customBuild), installationErrors,
 		// The process-global runtime owns one admission slot across all plugins
 		// and every separately compiled Next route module.
 		convertDocument: createPluginDocumentConverter().convert,

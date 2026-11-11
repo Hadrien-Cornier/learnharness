@@ -372,6 +372,11 @@ export interface PluginFrontendModule {
 	activate(context: PluginFrontendContext): void | PluginCleanup | Promise<void | PluginCleanup>;
 }
 
+/** Compare custom builds against the upstream version they are based on. */
+export function pluginAppVersion(version: string, customBuild?: boolean): string {
+	return customBuild ? version.replace(/-hc\.\d+$/, "") : version;
+}
+
 /** No loosely coercing malformed manifests or executing incompatible packages. */
 export function parsePluginManifest(value: unknown, folder: string, appVersion: string): PluginManifest {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("manifest.json must be an object");

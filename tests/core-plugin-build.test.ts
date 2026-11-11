@@ -38,6 +38,12 @@ test("builds only catalog packages deterministically; stages complete distributi
 	assert.equal(fs.existsSync(path.join(root, "data")), false);
 }));
 
+test("custom version uses its upstream base for plugin compatibility", () => fixture(root => {
+	fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ version: "0.4.1-hc.1", customBuild: true }));
+	buildCorePlugins(root, { run() {} });
+	validateCorePackages(root, path.join(root, "core-plugins"));
+}));
+
 test("failed builds/validation leave the previous staged tree intact", () => fixture((root) => {
 	const out = path.join(root, "core-plugins"); fs.mkdirSync(out); fs.writeFileSync(path.join(out, "previous"), "keep");
 	assert.throws(() => buildCorePlugins(root, { run: () => { throw Error("build failed"); } }), /build failed/);

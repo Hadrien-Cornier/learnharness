@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { parsePluginManifest, PLUGIN_ID_PATTERN } from "../src/core/plugins.ts";
+import { parsePluginManifest, pluginAppVersion, PLUGIN_ID_PATTERN } from "../src/core/plugins.ts";
 
 const exists = filename => { try { fs.lstatSync(filename); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } };
 function directory(filename) {
@@ -32,7 +32,8 @@ function safeTree(root) {
 }
 function validatePackage(root, code, id) {
 	safeTree(code);
-	const appVersion = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
+	const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+	const appVersion = pluginAppVersion(pkg.version, pkg.customBuild);
 	const manifest = parsePluginManifest(JSON.parse(fs.readFileSync(path.join(code, "manifest.json"), "utf8")), id, appVersion);
 	for (const entry of [manifest.main, manifest.backend, manifest.styles].filter(Boolean)) {
 		if (!fs.lstatSync(path.join(code, entry)).isFile()) throw new Error(`Missing Core package entry: ${id}/${entry}`);
