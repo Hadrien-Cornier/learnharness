@@ -16,7 +16,7 @@ The PNG display change comes from commit `91dbff9`. The retry change comes from 
 Use macOS with Node, npm, and Xcode installed. Signing and notarization are disabled for this custom configuration.
 
 1. Check out `custom/main` in a separate worktree.
-2. Run `npm ci`.
+2. Run `npm ci` and `npm run plugins:setup`.
 3. Run `npm run typecheck`, `npm test`, and `npm run lint`.
 4. Run `npm run desktop:custom`.
 5. Run `node scripts/smoke-workspace.mjs --app "dist-custom/mac-arm64/Hadrien LearnHarness.app/Contents/MacOS/Hadrien LearnHarness"`.
@@ -59,7 +59,7 @@ The internal extractor and auditor retry individual failed model calls with the 
 
 Automatic search uses the regular DuckDuckGo Lite search page over HTTP. It needs no account or API key. Research jobs receive result titles, source URLs, and snippets.
 
-Settings also offer an explicit DuckDuckGo choice. Tavily and Brave remain optional API providers and require an explicit choice and a key. Automatic search never selects a paid provider.
+Settings also offer an explicit DuckDuckGo choice. Tavily, Brave, Exa, Firecrawl, and Ollama remain optional API providers and require an explicit choice and a key. Automatic search never selects a paid provider.
 
 Public search can return rate limits or human-verification pages. The tool reports these as failures, rather than treating them as no results.
 
