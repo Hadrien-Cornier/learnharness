@@ -9,7 +9,7 @@ import { SEARCH_ENGINES, type SearchEngineId } from "../src/core/search.ts";
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lh-search-expansion-"));
 process.env.LH_DATA_DIR = path.join(dir, "data");
 process.env.LH_AUTH_FILE = path.join(dir, "auth.json");
-for (const { envVar } of SEARCH_ENGINES) delete process.env[envVar];
+for (const { envVar } of SEARCH_ENGINES.filter(engine => engine.envVar)) delete process.env[envVar];
 const { saveKey, deleteKey, keyStatuses } = await import("../src/server/keys.ts");
 const { writeSettings, readSettings } = await import("../src/store/settings.ts");
 const { searchStatus, searchProvider } = await import("../src/server/search.ts");
@@ -17,12 +17,12 @@ const realFetch = globalThis.fetch;
 
 beforeEach(() => {
 	globalThis.fetch = async () => { throw new Error("unexpected external request"); };
-	for (const { envVar } of SEARCH_ENGINES) deleteKey(envVar);
+	for (const { envVar } of SEARCH_ENGINES.filter(engine => engine.envVar)) deleteKey(envVar);
 	writeSettings({ version: 1 });
 });
 after(() => {
 	globalThis.fetch = realFetch;
-	for (const { envVar } of SEARCH_ENGINES) delete process.env[envVar];
+	for (const { envVar } of SEARCH_ENGINES.filter(engine => engine.envVar)) delete process.env[envVar];
 	fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -35,10 +35,11 @@ const engines = [
 for (const { id, envVar, url, header, prefix, payload } of engines) {
 	it(`${id}: saving, rotating, env override, pinning and deleting use the live shared composition`, async () => {
 		const fake = id === "firecrawl" ? "fc-fake-key-1234567890" : `${id}-fake-key-1234567890`;
-		assert.equal(searchStatus().available, false);
+		assert.equal(searchStatus().engine, "duckduckgo");
 		assert.equal(saveKey(envVar, fake).ok, true);
 		assert.equal(keyStatuses().find((row) => row.id === envVar)?.present, true);
-		assert.equal(searchStatus().engine, id, "key alone activates Automatic search");
+		assert.equal(searchStatus().engine, "duckduckgo", "automatic search stays free");
+		writeSettings({ version: 1, agent: { search: { engine: id } } });
 		let expectedKey = fake;
 		let calls = 0;
 		globalThis.fetch = async (input, init) => {
@@ -72,28 +73,29 @@ for (const { id, envVar, url, header, prefix, payload } of engines) {
 		assert.ok(searchStatus().reason.includes(envVar));
 		assert.equal(keyStatuses().find((row) => row.id === envVar)?.present, false);
 		writeSettings({ version: 1 });
-		assert.equal(searchStatus().engine, "tavily", "clearing the pin restores Automatic selection");
+		assert.equal(searchStatus().engine, "duckduckgo", "clearing the pin restores free automatic search");
 		assert.equal(calls, 5);
 	});
 }
 
-it("all five saved keys follow the approved Automatic order as keys are removed", () => {
-	for (const { id, envVar } of SEARCH_ENGINES) {
+it("automatic search stays free as saved keys are removed", () => {
+	for (const { id, envVar } of SEARCH_ENGINES.filter(engine => engine.envVar)) {
 		const fake = id === "tavily" ? "tvly-fake-key-1234567890" : id === "firecrawl" ? "fc-fake-key-1234567890" : `${id}-fake-key-1234567890`;
 		assert.equal(saveKey(envVar, fake).ok, true);
 	}
-	for (const { id, envVar } of SEARCH_ENGINES) {
-		assert.equal(searchStatus().engine, id);
-		assert.equal(searchProvider()?.id, id);
+	for (const { id, envVar } of SEARCH_ENGINES.filter(engine => engine.envVar)) {
+		assert.equal(searchStatus().engine, "duckduckgo");
+		assert.equal(searchProvider()?.id, "duckduckgo");
 		deleteKey(envVar);
 	}
-	assert.equal(searchStatus().available, false);
-	assert.equal(searchProvider(), null);
+	assert.equal(searchStatus().available, true);
+	assert.equal(searchProvider()?.id, "duckduckgo");
 });
 
 it("a configured later engine does not become a network-error fallback", async () => {
 	assert.equal(saveKey("EXA_API_KEY", "exa-fake-key-1234567890").ok, true);
 	assert.equal(saveKey("OLLAMA_API_KEY", "ollama-fake-key-1234567890").ok, true);
+	writeSettings({ version: 1, agent: { search: { engine: "exa" } } });
 	const urls: string[] = [];
 	globalThis.fetch = async (input) => { urls.push(String(input)); return new Response("quota", { status: 429 }); };
 	assert.equal(searchStatus().engine, "exa" satisfies SearchEngineId);
