@@ -42,7 +42,8 @@ function appWindow() {
 		app, BrowserWindow: FakeWindow,
 		Menu: { buildFromTemplate: (value: unknown) => value, setApplicationMenu() {} },
 		ipcMain: { on() {}, handle() {} },
-		session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
+		session: { fromPartition: () => ({ webRequest: { onBeforeSendHeaders() {} }, setPermissionRequestHandler() {}, setPermissionCheckHandler() {} }) },
+		screen: { getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }], getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
 		shell: { openExternal: async (target: string) => { opened.push(target); } },
 	};
 	const context = createContext({
@@ -56,7 +57,7 @@ function appWindow() {
 		setInterval() {}, setTimeout() {},
 	});
 	runInContext(mainSource, context, { filename: mainFile });
-	const win = runInContext(`createWindow(${JSON.stringify(appUrl)})`, context) as FakeWindow;
+	const win = runInContext(`createWindow(${JSON.stringify(appUrl)}, {id:"fixture", panes:[], zoom:1})`, context) as FakeWindow;
 	const navigate = (target: string) => {
 		let prevented = false;
 		win.webContents.emit("will-navigate", { preventDefault: () => { prevented = true; } }, target);
