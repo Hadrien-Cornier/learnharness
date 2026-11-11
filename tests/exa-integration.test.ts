@@ -22,10 +22,10 @@ after(() => {
 	fs.rmSync(dir, { recursive: true, force: true });
 });
 
-it("a saved Exa key activates search, and a saved pin reaches the adapter", async () => {
+it("a saved Exa pin reaches the adapter while automatic search stays free", async () => {
 	const saved = saveKey("EXA_API_KEY", "exa-fake-test-key-123456");
 	assert.equal(saved.ok, true);
-	assert.equal(searchStatus().engine, "exa");
+	assert.equal(searchStatus().engine, "duckduckgo");
 	assert.equal(keyStatuses().find((row) => row.id === "EXA_API_KEY")?.present, true);
 	writeSettings({ version: 1, agent: { search: { engine: "exa" } } });
 	assert.equal(searchStatus().engine, "exa");
