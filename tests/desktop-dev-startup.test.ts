@@ -120,16 +120,18 @@ function boot() {
 	const electron = {
 		app, BrowserWindow: FakeWindow, nativeTheme: { themeSource: "system" }, ipcMain: Object.assign(new EventEmitter(), { handle() {} }),
 		Menu: { buildFromTemplate() {}, setApplicationMenu() {} },
-		session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
+		session: { fromPartition: () => ({ webRequest: { onBeforeSendHeaders() {} }, setPermissionRequestHandler() {}, setPermissionCheckHandler() {} }) },
+		screen: { getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }], getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
 	};
 	const context = {
 		require: (id: string) => id === "electron" ? electron : id === "node:fs" ? { mkdirSync() {}, appendFileSync() {} }
+			: id === "./workspace.cjs" ? { ...mainRequire(id), Workspace: class extends mainRequire(id).Workspace { persist() {} } }
 			: id === "./appearance-chrome.cjs" ? { ...mainRequire(id), readAppearance: () => ({ mode: "dark", background: "#141414" }) }
 			: id === "./dev-server-readiness.cjs" ? { waitForDevServer: (url: string, { signal }: { signal: AbortSignal }) => {
 				probes.push({ url, signal }); signal.addEventListener("abort", () => fail(signal.reason), { once: true }); return readiness;
 			} } : mainRequire(id),
 		process: Object.assign(new EventEmitter(), { platform: "darwin", argv: [], env: { LH_DEV_URL: "http://localhost:3000" } }),
-		__dirname: dirname(mainFile), AbortController,
+		__dirname: dirname(mainFile), AbortController, URL,
 		console: { log: (line: string) => logs.push(line) },
 	};
 	runInNewContext(mainSource, context, { filename: mainFile });
