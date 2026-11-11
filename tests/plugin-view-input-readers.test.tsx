@@ -14,11 +14,14 @@ for (const toolName of ["quiz", "ask_user_question"] as const) test(`view reads 
   const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
   let changes = 0; const reader: ViewReaderRef<NativeQuestionViewState> = { current: null, changed() { changes++; } };
   const input = { question: "Question", details: "Visible **context**", options: [{ label: "Alpha", value: "a", description: "**Detail A**" }, { label: "Beta", value: "b", description: "Detail B" }, { label: "Gamma", value: "c" }], correctAnswer: "a", explanation: "PRIVATE" };
-  const fail = () => assert.fail("A view read must not save or submit");
-  const render = async (expanded: boolean) => { await act(async () => root.render(<QuestionDock toolName={toolName} toolCallId="display-order" input={input} viewReader={reader} expanded={expanded} onExpand={() => {}} onSubmit={fail} onSaveDraft={fail} dictationClaim={false} />)); };
+  const fail = () => assert.fail("A view read must not submit");
+  let saves = 0;
+  const render = async (expanded: boolean) => { await act(async () => root.render(<QuestionDock toolName={toolName} toolCallId="display-order" input={input} viewReader={reader} expanded={expanded} onExpand={() => {}} onSubmit={fail} onSaveDraft={() => { saves++; }} dictationClaim={false} />)); };
   try {
     await render(true); assert.ok(reader.current);
+    const savesBeforeFirstRead = saves;
     const first = reader.current!();
+    assert.equal(saves, savesBeforeFirstRead, "Reading must not save the draft");
     const labels = Array.from(host.querySelectorAll('[role="radio"]')).slice(0, first.question.options.length).map(button => (button.textContent ?? "").trim());
     assert.deepEqual(labels, first.question.options.map(option => option.label + (toolName === "ask_user_question" && option.description ? option.description.replaceAll("*", "") : "")));
     assert.equal(first.question.context, input.details);
@@ -28,7 +31,11 @@ for (const toolName of ["quiz", "ask_user_question"] as const) test(`view reads 
       const editor = host.querySelector<HTMLElement>('[data-testid="thinking-field"] [data-file-path-input]')!;
       editor.textContent = "  untrimmed thinking\n"; editor.dispatchEvent(new window.Event("input", { bubbles: true }));
     });
-    const current = reader.current!(); assert.deepEqual(current.draft.values, [current.question.options[0]!.value]);
+    assert.ok(saves > savesBeforeFirstRead, "Editing persists the draft");
+    const savesBeforeCurrentRead = saves;
+    const current = reader.current!();
+    assert.equal(saves, savesBeforeCurrentRead, "Reading must not save the draft");
+    assert.deepEqual(current.draft.values, [current.question.options[0]!.value]);
     assert.equal(current.draft.thinking, "  untrimmed thinking\n");
     if (toolName === "quiz") assert.equal(current.draft.confidence, 50);
     await render(false); assert.equal(reader.current!().draft.thinking, "  untrimmed thinking\n");
