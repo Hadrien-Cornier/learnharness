@@ -112,6 +112,7 @@ try {
  const frameElement = await page.$('[data-testid="demo-iframe"]');
  const frame = await frameElement.contentFrame();
  await frame.waitForSelector("#add");
+ await frame.waitForFunction(() => typeof document.getElementById("add")?.onclick === "function");
  assert.equal(await frame.$eval("#count", element => element.textContent), "0");
  await frame.click("#add");
  await frame.waitForFunction(() => document.getElementById("count").textContent === "1");
