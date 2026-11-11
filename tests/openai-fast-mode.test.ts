@@ -6,6 +6,7 @@ import path from "node:path";
 import { zstdDecompressSync } from "node:zlib";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { InteractionLayersProvider } from "../components/interaction-layers.tsx";
 import { normalizeContext, type Model, type SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { sanitizeUserSettings } from "../src/core/settings.ts";
 
@@ -122,10 +123,10 @@ test("Fast mode off leaves the native service tier unset unless the caller selec
 
 test("the Agent settings show the saved Fast mode choice and its usage cost", () => {
 	for (const openaiFastMode of [false, true]) {
-		const html = renderToStaticMarkup(React.createElement(AgentSection, {
+		const html = renderToStaticMarkup(React.createElement(InteractionLayersProvider, null, React.createElement(AgentSection, {
 			agent: { openaiFastMode }, models: undefined, graph: undefined, compaction: undefined,
 			onSectionChange: () => true, onModelsChange: () => {}, onCompactionChange: () => true,
-		}));
+		})));
 		assert.ok(html.includes('data-testid="openai-fast-mode"'));
 		assert.ok(html.includes('aria-label="OpenAI Fast mode"'));
 		assert.ok(html.includes(`aria-checked="${openaiFastMode}"`));
