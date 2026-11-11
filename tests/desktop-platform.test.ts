@@ -52,6 +52,7 @@ describe("desktop development startup", () => {
 			webContents = { on() {}, setWindowOpenHandler() {} };
 			loadURL(url: string) { loaded.push(url); }
 			once() {}
+			on() {}
 		}
 		const electron = {
 			app: {
@@ -62,12 +63,17 @@ describe("desktop development startup", () => {
 			nativeTheme: { themeSource: "system" },
 			Menu: { buildFromTemplate() {}, setApplicationMenu() {} },
 			ipcMain: { handle() {}, on() {} },
-			session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
+			session: { fromPartition: () => ({ webRequest: { onBeforeSendHeaders() {} }, setPermissionRequestHandler() {}, setPermissionCheckHandler() {} }) },
+			screen: { getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }], getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
 		};
 		const context = {
 			require: (id: string) => {
 				if (id === "electron") return electron;
 				if (id === "node:fs") return { mkdirSync() {}, appendFileSync() {} };
+				if (id === "./workspace.cjs") {
+					const workspace = mainRequire(id);
+					return { ...workspace, Workspace: class extends workspace.Workspace { persist() {} } };
+				}
 				if (id === "./dev-server-readiness.cjs") return { waitForDevServer: (url: string, options: { signal: AbortSignal }) => {
 					assert.equal(url, devUrl);
 					assert.equal(options.signal.aborted, false);
@@ -76,7 +82,7 @@ describe("desktop development startup", () => {
 				return mainRequire(id);
 			},
 			process: { platform: "linux", argv: [], env: { LH_DEV_URL: devUrl }, on() {} },
-			AbortController,
+			AbortController, URL,
 			__dirname: dirname(mainFile),
 		};
 		runInNewContext(mainSource, context, { filename: mainFile });
@@ -102,7 +108,7 @@ describe("desktop appearance boot and IPC", () => {
 			background: string | undefined;
 			overlay: unknown;
 			constructor(readonly options: { backgroundColor: string; titleBarOverlay: unknown }) { windows.push(this); }
-			loadURL() {} once() {} isDestroyed() { return false; }
+			loadURL() {} once() {} on() {} isDestroyed() { return false; }
 			setBackgroundColor(color: string) { this.background = color; }
 			setTitleBarOverlay(colors: unknown) { this.overlay = colors; }
 		}
@@ -117,9 +123,14 @@ describe("desktop appearance boot and IPC", () => {
 					BrowserWindow: FakeWindow, nativeTheme,
 					Menu: { buildFromTemplate() {}, setApplicationMenu() {} },
 					ipcMain: { handle() {}, on: (name: string, fn: (event: unknown, value: unknown) => void) => handlers.set(name, fn) },
-					session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
+					session: { fromPartition: () => ({ webRequest: { onBeforeSendHeaders() {} }, setPermissionRequestHandler() {}, setPermissionCheckHandler() {} }) },
+			screen: { getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }], getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
 				};
 				if (id === "node:fs") return { mkdirSync() {}, appendFileSync() {} };
+				if (id === "./workspace.cjs") {
+					const workspace = mainRequire(id);
+					return { ...workspace, Workspace: class extends workspace.Workspace { persist() {} } };
+				}
 				if (id === "./appearance-chrome.cjs") return { ...chrome, readAppearance: (directory: string) => {
 					bootDirectory = directory; return { mode: "light", background: "#faf9f5" };
 				} };
