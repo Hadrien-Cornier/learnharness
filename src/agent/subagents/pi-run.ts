@@ -99,7 +99,7 @@ export async function runSubagent(tools: AgentTool<any, any>[], opts: SubagentRu
 	}
 	const capturedStream = backgroundCaptureStream(opts.bypassWorkerRequestAdmission ? engine.streamFn : workerRequestStream(engine.streamFn), capture);
 	// Callers that retry the whole job opt out to keep one retry policy.
-	const streamFn = opts.retryProviderCalls === false ? capturedStream
+	const streamFn = opts.retryProviderCalls === false || !opts.role ? capturedStream
 		: retrySubagentStream(capturedStream, { retryDelaysMs: opts.retryDelaysMs, onDiscardedMessage: recordMessage });
 	const agent = new Agent({
 		identity: APP_IDENTITY,
