@@ -51,10 +51,10 @@ describe("resolveSearchEngineFor (the auto-detect decision)", () => {
 		assert.match(out.reason, /API key is missing/);
 	});
 
-	it("auto-detects an Exa key, preserving existing engine priority", () => {
-		assert.equal(resolveSearchEngineFor(undefined, { exa: "exa-test-key" }).engine, "exa");
-		assert.equal(resolveSearchEngineFor(undefined, { exa: "exa-test-key", brave: "brave-key" }).engine, "brave");
-		assert.equal(resolveSearchEngineFor(undefined, { exa: "exa-test-key", brave: "brave-key", tavily: "tavily-key" }).engine, "tavily");
+	it("automatic search stays free when Exa is configured", () => {
+		assert.equal(resolveSearchEngineFor(undefined, { exa: "exa-test-key" }).engine, "duckduckgo");
+		assert.equal(resolveSearchEngineFor(undefined, { exa: "exa-test-key", brave: "brave-key" }).engine, "duckduckgo");
+		assert.equal(resolveSearchEngineFor(undefined, { exa: "exa-test-key", brave: "brave-key", tavily: "tavily-key" }).engine, "duckduckgo");
 	});
 
 	it("honors an Exa pin and refuses to silently fall back", () => {
@@ -257,25 +257,25 @@ describe("ollamaProvider (hosted search only)", () => {
 	});
 });
 
-describe("five-engine catalog and resolution", () => {
-	it("pins the approved Automatic order independently of table-driven tests", () => {
-		assert.deepEqual(SEARCH_ENGINES.map(({ id }) => id), ["tavily", "brave", "exa", "firecrawl", "ollama"]);
+describe("search engine catalog and resolution", () => {
+	it("lists free and keyed providers independently of table-driven tests", () => {
+		assert.deepEqual(SEARCH_ENGINES.map(({ id }) => id), ["duckduckgo", "tavily", "brave", "exa", "firecrawl", "ollama"]);
 		assert.equal(isSearchEngineId("chatgpt"), false);
 		assert.equal(isSearchEngineId("deepseek"), false);
 		for (const value of [null, {}, 1, "", "toString"]) assert.equal(isSearchEngineId(value), false);
 	});
 
-	it("resolves every combination of configured keys without changing precedence", () => {
+	it("keeps free automatic search for every combination of keys", () => {
 		for (let mask = 0; mask < 2 ** SEARCH_ENGINES.length; mask++) {
 			const configured = SEARCH_ENGINES.filter((_, index) => mask & (1 << index));
 			const keys = Object.fromEntries(configured.map(({ id }) => [id, `fake-${id}`]));
 			const result = resolveSearchEngineFor(undefined, keys);
-			assert.equal(result.engine, configured[0]?.id ?? null, `key mask ${mask}`);
-			assert.equal(result.available, configured.length > 0);
+			assert.equal(result.engine, "duckduckgo", `key mask ${mask}`);
+			assert.equal(result.available, true);
 		}
 	});
 
-	for (const { id, envVar } of SEARCH_ENGINES) {
+	for (const { id, envVar } of SEARCH_ENGINES.filter(engine => engine.envVar)) {
 		it(`${id}: an explicit pin wins, but a missing pinned key never falls back`, () => {
 			const keys: Partial<Record<SearchEngineId, string>> = Object.fromEntries(SEARCH_ENGINES.map(({ id }) => [id, `fake-${id}`]));
 			assert.equal(resolveSearchEngineFor(id, keys).engine, id);
