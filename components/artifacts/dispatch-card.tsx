@@ -64,7 +64,7 @@ export function DispatchCard({ toolCallId, kind }: { toolCallId: string; kind: J
 			className="ml-1 rounded-sm border border-border bg-card px-2 py-0.5 font-ui normal-case tracking-normal text-foreground transition-colors hover:border-muted-foreground/50 disabled:opacity-50">
 			{retrying ? "Retrying…" : "Retry"}
 		</button>
-		{retryError && <span role="alert" className="text-red-500">{retryError}</span>}
+		{retryError && <span role="alert" className="text-error">{retryError}</span>}
 	</> : null;
 	const failureDetails = job?.status === "error" && job.error ? (
 		<details className="basis-full" data-testid="dispatch-error-details">
