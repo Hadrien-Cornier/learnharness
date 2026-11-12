@@ -728,8 +728,9 @@ export function useDictation({ append, destination = "primary", disabled = false
 		};
 	}, [cleanup]);
 	useEffect(() => {
-		if (primary && !paneActive) return;
-		return registerController(owner, { primary, toggle, cancel });
+		// Keep every mounted owner reachable for cancellation across pane switches.
+		// Only the active primary pane is eligible for the toggle shortcut.
+		return registerController(owner, { primary: primary && paneActive, toggle, cancel });
 	}, [owner, primary, paneActive, toggle, cancel]);
 
 	return {

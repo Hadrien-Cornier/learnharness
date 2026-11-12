@@ -5,6 +5,7 @@ import { parseHTML } from "linkedom";
 import { finishDictation, useDictation, useDictationTarget, type Dictation } from "../components/dictation.tsx";
 import { notifySettingsSaved } from "../components/settings-signal.ts";
 import { useDictationLanguage } from "../components/dictation-preference.ts";
+import { PaneContext } from "../components/workspace/pane-context.tsx";
 import { isDictationActive, useDictationActive } from "../components/dictation-state.ts";
 import type { UserSettings } from "../src/core/index.ts";
 
@@ -107,6 +108,18 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 	}
 	let root = createRoot(document.getElementById("root")!);
 	let firstMount = true;
+	const paneDictations = new Map<string, Dictation>();
+	function PaneHarness({ id }: { id: string }) {
+		paneDictations.set(id, useDictation({ append: text => state.appends.push(text) }));
+		return null;
+	}
+	const mountPanes = async (active: string) => {
+		const pane = (id: string) => ({ id, active: id === active, root: { current: null }, getView: () => ({}), saveView: () => {} });
+		await act(async () => { root.render(<>
+			<PaneContext.Provider value={pane("a")}><PaneHarness id="a" /></PaneContext.Provider>
+			<PaneContext.Provider value={pane("b")}><PaneHarness id="b" /></PaneContext.Provider>
+		</>); });
+	};
 	const mount = async () => {
 		await act(async () => { root.render(<Harness />); });
 		// Each fixture is a new server record. Explicitly invalidate a prior
@@ -121,6 +134,7 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 		state,
 		get dictation() { return latest; },
 		get setting() { return setting; },
+		mountPanes, paneDictations,
 		mount,
 		unmount: () => dispose!(),
 		remount: async () => {
@@ -373,4 +387,21 @@ test("microphone permission resolving after unmount immediately stops the late s
 	assert.equal(f.state.stops, 1);
 	assert.equal(Socket.all.length, 0);
 	assert.equal(isDictationActive(), false);
+});
+
+
+test("Escape cancels the recording owner after activating another pane", async () => {
+	const f = await fixture();
+	await f.mountPanes("a");
+	await act(async () => { f.paneDictations.get("a")!.toggle(); });
+	const socket = Socket.all[0]!;
+	await act(async () => { socket.open(); socket.final("discard me"); });
+	assert.equal(f.paneDictations.get("a")!.phase, "recording");
+	await f.mountPanes("b");
+	await act(async () => { window.dispatchEvent(new window.Event("lh:kbd-cancel-dictation")); });
+	assert.equal(f.paneDictations.get("a")!.phase, "idle");
+	assert.equal(f.state.stops, 1, "the owner's microphone is released");
+	assert.deepEqual(f.state.appends, [], "cancel discards the transcript");
+	await act(async () => { window.dispatchEvent(new window.Event("lh:kbd-toggle-dictation")); });
+	assert.equal(f.paneDictations.get("b")!.phase, "connecting", "toggle still targets the active pane");
 });
