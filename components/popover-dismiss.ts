@@ -1,5 +1,6 @@
 import { useEffect, type RefObject } from "react";
 import { useInteractionLayer, useInteractionLayers } from "./interaction-layers";
+import { usePaneActive } from "./workspace/pane-context";
 
 /**
  * Close-on-dismissal for floating panels (graph chrome, 2026-09-17):
@@ -17,11 +18,13 @@ export function usePopoverDismiss(
 	options?: { layerRootRef?: RefObject<HTMLElement | null>; ownerId?: string },
 ) {
 	const controller = useInteractionLayers();
+	const paneActive = usePaneActive();
+	const enabled = open && paneActive;
 	const panel = options?.layerRootRef ?? rootRef;
-	const layer = useInteractionLayer({ kind: "popup", enabled: open, rootRef: panel, anchorRef: rootRef, ownerId: options?.ownerId,
+	const layer = useInteractionLayer({ kind: "popup", enabled, rootRef: panel, anchorRef: rootRef, ownerId: options?.ownerId,
 		onClose: () => { close(); return "closed"; } });
 	useEffect(() => {
-		if (!open) return;
+		if (!enabled) return;
 		const onPointerDown = (e: PointerEvent) => {
 			if (!controller.isElementEligible(panel.current)) return;
 			if (rootRef.current && !rootRef.current.contains(e.target as Node)) close();
@@ -30,6 +33,6 @@ export function usePopoverDismiss(
 		return () => {
 			document.removeEventListener("pointerdown", onPointerDown);
 		};
-	}, [open, close, rootRef, panel, controller]);
+	}, [enabled, close, rootRef, panel, controller]);
 	return layer;
 }

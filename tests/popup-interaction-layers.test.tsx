@@ -6,6 +6,8 @@ import { InteractionLayersProvider, useInteractionLayers, type InteractionLayers
 import { HostDialog } from "../components/host-dialog.tsx";
 import { MenuShell } from "../components/menu-shell.tsx";
 import { usePopoverDismiss } from "../components/popover-dismiss.ts";
+import { PaneContext } from "../components/workspace/pane-context.tsx";
+import { StatsBar } from "../components/stats-bar.tsx";
 import { createPortal } from "react-dom";
 import { installModalDom } from "./modal-dom.ts";
 import { KeysSection } from "../components/settings/keys-section.tsx";
@@ -303,4 +305,27 @@ test("Keys custom and ordinary row drafts survive editor-first Escape even with 
 		assert.equal((byTest("key-deepgram_api_key-input") as HTMLInputElement).value, "ordinary-row-draft", "ordinary row Cancel still folds without clearing its existing local state");
 		assert.equal(mock.writes.length, 0);
 	} finally { mock.restore(); }
+}));
+
+test("a session stats popup in an inactive pane cannot own the active pane's shortcuts or Escape", async () => withDom(async (controller, render) => {
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = async input => {
+		if (input === "/api/models") return Response.json({ models: [], providers: [], defaults: null, slots: { strong: null, cheap: null, vision: null }, rolePins: {} });
+		return Response.json({ settings: {} });
+	};
+	const pane = (id: string, active: boolean) => ({ id, active, root: { current: null }, getView: () => ({}), saveView: () => {} });
+	const tree = (active: string) => <>
+		<PaneContext.Provider value={pane("a", active === "a")}><div data-testid="pane-a"><StatsBar chatId="a" turns={[]} /></div></PaneContext.Provider>
+		<PaneContext.Provider value={pane("b", active === "b")}><div data-testid="pane-b"><StatsBar chatId="b" turns={[]} /><button data-testid="active-command">Command</button></div></PaneContext.Provider>
+	</>;
+	try {
+		await render(tree("a"));
+		await click('[data-testid="pane-a"] [data-testid="stats-summary"]');
+		assert(document.querySelector('[data-testid="pane-a"] [data-testid="stats-detail"]'));
+		await render(tree("b")); // Focus or page navigation can switch without pointerdown.
+		const target = document.querySelector<HTMLElement>('[data-testid="active-command"]')!;
+		assert.equal(controller().isElementEligible(target), true, "inactive popup must not block the active pane");
+		const escape = await key(controller(), target, "Escape");
+		assert.equal(escape.defaultPrevented, false, "inactive popup must not consume Escape");
+	} finally { globalThis.fetch = originalFetch; }
 }));
