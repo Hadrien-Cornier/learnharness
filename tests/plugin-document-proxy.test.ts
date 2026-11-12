@@ -51,7 +51,7 @@ async function uploadThroughNext(path: string, oversized: boolean, forceClone = 
 	form.append("file", new File([result.markdown], result.name));
 	const sample = new Request(new URL(path, origin), { method: "POST", body: form });
 	const prefix = Buffer.from(await sample.arrayBuffer());
-	const chunk = Buffer.alloc(64 * 1024, 32); // Legal MIME epilogue after a complete multipart form.
+	const chunk = Buffer.from("\r\n".repeat(32 * 1024)); // Multipart trailing CRLF accepted by Node’s parser.
 	const chunks: Buffer[] = oversized ? [prefix, ...Array<Buffer>(417).fill(chunk)] : [prefix];
 	const actualBytes = chunks.reduce((sum, bytes) => sum + bytes.byteLength, 0);
 	const raw = Object.assign(Readable.from(chunks), { url: path }) as IncomingMessage;
