@@ -28,6 +28,12 @@ it("SSRs without browser globals and keeps the trigger's unwrapped markup", () =
 	assert.ok(!html.includes("tooltip-content"));
 });
 
+// Let Node emit its one-time experimental MockTimers warning before the
+// fixture starts capturing console errors. All fixture errors still fail.
+mock.timers.enable({ apis: ["setTimeout"] });
+mock.timers.reset();
+await new Promise<void>(resolve => setImmediate(resolve));
+
 let root: Root | null = null;
 let disposeGlobals: (() => void) | null = null;
 function fixture(interactions = true) {
