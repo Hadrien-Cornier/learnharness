@@ -1,6 +1,4 @@
-/** Compose free public search by default; paid APIs require an explicit choice. */
-
-import type { SearchEngineId, SearchHit, SearchProvider, SearchStatus } from "../core/search.ts";
+import { SEARCH_ENGINES, type SearchEngineId, type SearchHit, type SearchProvider, type SearchStatus } from "../core/search.ts";
 import { freeSearchProvider } from "./free-search.ts";
 import { keyValue } from "./keys.ts";
 import { effectiveSettings } from "./stores.ts";
@@ -90,21 +88,142 @@ export function braveProvider(apiKey: string, fetchFn: FetchLike = fetch): Searc
 	};
 }
 
-/** Optional API providers. Free public search is the automatic default. */
-const ENGINE_ORDER: ReadonlyArray<{ id: SearchEngineId; envVar: string }> = [
-	{ id: "tavily", envVar: "TAVILY_API_KEY" },
-	{ id: "brave", envVar: "BRAVE_API_KEY" },
-];
+/** Invalid JSON must not echo provider response bodies into tool results. */
+async function searchJson(response: Response, label: string): Promise<unknown> {
+	try {
+		return await response.json();
+	} catch {
+		throw new Error(`${label} search API returned an invalid response`);
+	}
+}
+
+/** Exa's Search API returns highlights when requested. Its result snippets
+ * are normalized to the same bounded, provider-neutral shape as the other
+ * adapters. Do not expose error bodies, which may contain credentials. */
+export function exaProvider(apiKey: string, fetchFn: FetchLike = fetch): SearchProvider {
+	return {
+		id: "exa",
+		async search(query: string, count: number): Promise<SearchHit[]> {
+			const resp = await fetchFn("https://api.exa.ai/search", {
+				method: "POST",
+				headers: { "content-type": "application/json", "x-api-key": apiKey },
+				body: JSON.stringify({ query, type: "auto", numResults: Math.min(100, Math.max(1, Math.floor(count))), contents: { highlights: true } }),
+				signal: AbortSignal.timeout(30_000),
+			});
+			if (!resp.ok) throw new Error(`Exa search API ${resp.status}`);
+			const data = await searchJson(resp, "Exa");
+			if (!data || typeof data !== "object" || !Array.isArray((data as { results?: unknown }).results)) {
+				throw new Error("Exa search API returned an invalid response");
+			}
+			return (data as { results: unknown[] }).results.flatMap((result): SearchHit[] => {
+				if (!result || typeof result !== "object") return [];
+				const row = result as { title?: unknown; url?: unknown; highlights?: unknown; text?: unknown };
+				if (typeof row.url !== "string" || !row.url.trim()) return [];
+				try {
+					const protocol = new URL(row.url).protocol;
+					if (protocol !== "http:" && protocol !== "https:") return [];
+				} catch { return []; }
+				const highlights = Array.isArray(row.highlights) ? row.highlights.filter((v): v is string => typeof v === "string").join(" ") : "";
+				const snippet = highlights || (typeof row.text === "string" ? row.text : "");
+				return [{ title: typeof row.title === "string" && row.title ? row.title : row.url, url: row.url, snippet: snippet.replace(/\s+/g, " ").trim().slice(0, 500) }];
+			});
+		},
+	};
+}
+
+/** Firecrawl's v2 search API: no scrapeOptions, so web_fetch still owns
+ *  page bodies. Wire shape checked against the official 2026-11-03 snapshot;
+ *  live account access and pricing are not inferred from configuration. */
+export function firecrawlProvider(apiKey: string, fetchFn: FetchLike = fetch): SearchProvider {
+	return {
+		id: "firecrawl",
+		async search(query: string, count: number): Promise<SearchHit[]> {
+			const resp = await fetchFn("https://api.firecrawl.dev/v2/search", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					authorization: `Bearer ${apiKey}`,
+				},
+				body: JSON.stringify({ query, limit: Math.min(100, Math.max(1, Math.floor(count))) }),
+				signal: AbortSignal.timeout(30_000),
+			});
+			if (!resp.ok) throw new Error(`Firecrawl search API ${resp.status}`);
+			const data = await searchJson(resp, "Firecrawl");
+			if (!data || typeof data !== "object" || (data as { success?: unknown }).success !== true) {
+				throw new Error("Firecrawl search API returned an invalid response");
+			}
+			const payload = (data as { data?: unknown }).data;
+			if (!payload || typeof payload !== "object" || !Array.isArray((payload as { web?: unknown }).web)) {
+				throw new Error("Firecrawl search API returned an invalid response");
+			}
+			return (payload as { web: unknown[] }).web.flatMap((result): SearchHit[] => {
+				if (!result || typeof result !== "object") return [];
+				const row = result as { title?: unknown; url?: unknown; description?: unknown };
+				return searchHit(row.title, row.url, row.description);
+			});
+		},
+	};
+}
+
+/** Hosted search only, adapted from chiranjivsethi's PR #81 (a216fa8).
+ *  No local model URL, model registration, or provider-backed page fetch. */
+export function ollamaProvider(apiKey: string, fetchFn: FetchLike = fetch): SearchProvider {
+	return {
+		id: "ollama",
+		async search(query: string, count: number): Promise<SearchHit[]> {
+			const resp = await fetchFn("https://ollama.com/api/web_search", {
+				method: "POST",
+				headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+				body: JSON.stringify({ query, max_results: Math.min(10, Math.max(1, Math.floor(count))) }),
+				signal: AbortSignal.timeout(30_000),
+			});
+			if (!resp.ok) throw new Error(`Ollama search API ${resp.status}`);
+			const data = await searchJson(resp, "Ollama");
+			if (!data || typeof data !== "object" || !Array.isArray((data as { results?: unknown }).results)) {
+				throw new Error("Ollama search API returned an invalid response");
+			}
+			return (data as { results: unknown[] }).results.flatMap((result): SearchHit[] => {
+				if (!result || typeof result !== "object") return [];
+				const row = result as { title?: unknown; url?: unknown; content?: unknown };
+				return searchHit(row.title, row.url, row.content);
+			});
+		},
+	};
+}
+
+/** Match Exa's bounded result contract for the other new adapters. */
+function searchHit(title: unknown, url: unknown, snippet: unknown): SearchHit[] {
+	if (typeof url !== "string" || !url.trim()) return [];
+	try {
+		const protocol = new URL(url).protocol;
+		if (protocol !== "http:" && protocol !== "https:") return [];
+	} catch { return []; }
+	return [{
+		title: typeof title === "string" && title ? title : url,
+		url,
+		snippet: typeof snippet === "string" ? snippet.replace(/\s+/g, " ").trim().slice(0, 500) : "",
+	}];
+}
 
 /** The engine's key (env-or-file; env wins) — null when the engine is
  *  not keyed, which by owner decision means NOT LIVE. */
 function engineKey(id: SearchEngineId): string | null {
-	const envVar = ENGINE_ORDER.find((e) => e.id === id)?.envVar;
+	const envVar = SEARCH_ENGINES.find((e) => e.id === id)?.envVar;
 	const value = envVar ? keyValue(envVar) : undefined;
 	return value ? value : null;
 }
 
-/** Free public search is automatic. Explicit API providers require their own key. */
+/** Every engine's live key, read fresh (the resolver's input). */
+function engineKeys(): Partial<Record<SearchEngineId, string>> {
+	const keys: Partial<Record<SearchEngineId, string>> = {};
+	for (const { id } of SEARCH_ENGINES) {
+		const key = engineKey(id);
+		if (key) keys[id] = key;
+	}
+	return keys;
+}
+
+/** Free public search is automatic; an explicitly selected API provider needs a key. */
 export function resolveSearchEngineFor(
 	pinned: SearchEngineId | undefined,
 	/** Per-engine live keys (absent engine = absent property is fine). */
@@ -119,7 +238,7 @@ export function resolveSearchEngineFor(
 			return {
 				available: false,
 				engine: null,
-				reason: `search engine is set to "${pinned}" but its API key is missing — set the ${pinned === "tavily" ? "TAVILY_API_KEY" : "BRAVE_API_KEY"} key`,
+				reason: `search engine is set to "${pinned}" but its API key is missing — set the ${SEARCH_ENGINES.find((e) => e.id === pinned)?.envVar} key`,
 				key: null,
 			};
 		}
@@ -134,16 +253,12 @@ export function resolveSearchEngineFor(
 export function searchStatus(): SearchStatus {
 	const { available, engine, reason } = resolveSearchEngineFor(
 		effectiveSettings().agent.search?.engine,
-		{
-			tavily: engineKey("tavily") ?? undefined,
-			brave: engineKey("brave") ?? undefined,
-		},
+		engineKeys(),
 	);
 	return { available, engine, reason };
 }
 
-/** Search available at all? (the settings UI's gray-out signal + the
- *  researcher's enable/disable pin — Teacher stream's rewiring reads this.) */
+/** Search status only — research itself remains available without a key. */
 export function searchAvailable(): boolean {
 	return searchStatus().available;
 }
@@ -152,11 +267,21 @@ export function searchAvailable(): boolean {
  *  the tool layer (Teacher stream) calls this once per search, so key
  *  rotations take effect immediately. */
 export function searchProvider(): SearchProvider | null {
-	const resolved = resolveSearchEngineFor(effectiveSettings().agent.search?.engine, {
-		tavily: engineKey("tavily") ?? undefined,
-		brave: engineKey("brave") ?? undefined,
-	});
+	const resolved = resolveSearchEngineFor(effectiveSettings().agent.search?.engine, engineKeys());
 	if (resolved.engine === "duckduckgo") return freeSearchProvider();
 	if (!resolved.available || !resolved.key) return null;
-	return resolved.engine === "tavily" ? tavilyProvider(resolved.key) : braveProvider(resolved.key);
+	switch (resolved.engine) {
+		case "tavily":
+			return tavilyProvider(resolved.key);
+		case "brave":
+			return braveProvider(resolved.key);
+		case "exa":
+			return exaProvider(resolved.key);
+		case "firecrawl":
+			return firecrawlProvider(resolved.key);
+		case "ollama":
+			return ollamaProvider(resolved.key);
+		default:
+			return null;
+	}
 }

@@ -189,7 +189,7 @@ for (const id of ["chat:xiaomi/mimo-v2.6-pro", "chat:deepseek/deepseek-v4.1-flas
 
 test("a failed continuation retains its request/error, not the previous reply or tool result", async (t) => {
 	const dir = setup(t);
-	await assert.rejects(runSubagent(tools, { role: "auditor", engine: fakeEngine(true), systemPrompt: "Fixture", prompt: "Fixture", maxTurns: 3 }), /waiting for response headers/);
+	await assert.rejects(runSubagent(tools, { role: "auditor", engine: fakeEngine(true), systemPrompt: "Fixture", prompt: "Fixture", maxTurns: 3, retryProviderCalls: false }), /waiting for response headers/);
 	const result = readCapture(dir);
 	assert.equal(result.request.turn, 2);
 	assert.match(JSON.stringify(result.request.payload), /SYNTHETIC_SESSION_INDEX/);
@@ -322,7 +322,7 @@ for (const role of ["pdfReader", "visualMaker"] as const) {
 	}
 	test(`${role} actual entrypoint retains provider failures`, async (t) => {
 		const dir = setup(t, role);
-		const opts = { engine: fakeEngine(true), headless };
+		const opts = { engine: fakeEngine(true), headless, retryDelaysMs: [] };
 		const result = role === "pdfReader"
 			? await runPdfReaderAgent({ path: path.join(import.meta.dirname, "fixtures/sample-3page.pdf"), question: "Fixture?" }, opts)
 			: await runVisualMaker({ brief: "Fixture" }, opts);
@@ -353,4 +353,47 @@ test("recording failures and unserializable payloads never throw into a worker",
 	t.after(() => { console.warn = warn; });
 	assert.doesNotThrow(() => { bad.begin(model, {}); bad.finish(new Error("Fixture")); });
 	assert.equal(warnings, 1, "One warning per run, no endless debug-log errors");
+});
+
+test("named core captures retain session identity while awaited worker hooks fence tools and continuation", async t => {
+	const dir = setup(t, "all");
+	const faux = createFauxCore({});
+	faux.setResponses([
+		fauxAssistantMessage([fauxToolCall("checkpoint", {})], { stopReason: "toolUse" }),
+		fauxAssistantMessage("Finished after checkpoint."),
+	]);
+	let assistantSaved = false, resultSaved = false, requests = 0;
+	const sessions: Array<string | undefined> = [];
+	const engine: PiEngine = { model: faux.getModel(), streamFn: (selected, context, options) => {
+		sessions.push(options?.sessionId);
+		if (sessions.length === 2) assert.equal(resultSaved, true, "tool result checkpoint precedes continuation");
+		return faux.streamSimple(selected, context, options);
+	} };
+	await runSubagent([{ name: "checkpoint", label: "checkpoint", description: "Offline checkpoint", parameters: Type.Object({}), execute: async () => {
+		assert.equal(assistantSaved, true, "assistant checkpoint precedes side effect");
+		return { content: [{ type: "text", text: "saved tool result" }], details: null };
+	} }], {
+		role: "researcher", engine, systemPrompt: "Fixture", prompt: "Fixture", maxTurns: 2,
+		beforeRequest: async () => { await Promise.resolve(); requests++; },
+		onEvent: async event => {
+			if (event.type === "message_end" && event.message.role === "assistant") { await Promise.resolve(); assistantSaved = true; }
+			if (event.type === "tool_execution_end") { await Promise.resolve(); resultSaved = true; }
+		},
+	});
+	assert.equal(requests, 2); assert.equal(sessions.length, 2); assert.equal(typeof sessions[0], "string"); assert.equal(sessions[1], sessions[0]);
+	const record = readCapture(dir); assert.equal(record.role, "researcher"); assert.equal(record.runId, sessions[0]); assert.equal(record.request.turn, 2);
+});
+
+test("explicit plugin engines have native per-run sessions but no fabricated role capture even under all", async t => {
+	const dir = setup(t, "all");
+	const faux = createFauxCore({}); const sessions: Array<string | undefined> = [];
+	const engine: PiEngine = { model: faux.getModel(), streamFn: (selected, context, options) => {
+		sessions.push(options?.sessionId); return faux.streamSimple(selected, context, options);
+	} };
+	for (let i = 0; i < 2; i++) {
+		faux.setResponses([fauxAssistantMessage("Private plugin result.")]);
+		await runSubagent([], { engine, chatId: "not-a-core-job", systemPrompt: "Plugin instructions", prompt: "Explicit task", maxTurns: 1 });
+	}
+	assert.equal(sessions.length, 2); assert.equal(typeof sessions[0], "string"); assert.notEqual(sessions[0], sessions[1]);
+	assert.deepEqual(fs.readdirSync(dir), []);
 });

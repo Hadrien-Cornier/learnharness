@@ -3,6 +3,8 @@
 import { usePane, usePaneCommand } from "@/components/workspace/pane-context";
 
 import { useEffect } from "react";
+import { useOptionalInteractionLayers } from "./interaction-layers";
+import { isInteractionScopeEligible } from "./plugin-input-focus";
 
 /**
  * TAB CYCLES THE ACTIVE SURFACE'S TEXT FIELDS (owner, keyboard round
@@ -22,10 +24,11 @@ import { useEffect } from "react";
 export function useFieldCycle(fields: () => readonly HTMLElement[]) {
 	const pane = usePane();
 	const paneCommand = usePaneCommand();
+	const controller = useOptionalInteractionLayers();
 	useEffect(() => {
 		const onCycle = () => {
 			if (!paneCommand()) return;
-			const list = fields().filter((el) => el.isConnected && (!pane || el.closest("[data-workspace-pane]")?.getAttribute("data-workspace-pane") === pane.id));
+			const list = fields().filter((el) => isInteractionScopeEligible(el, controller) && el.isConnected && (!pane || el.closest("[data-workspace-pane]")?.getAttribute("data-workspace-pane") === pane.id));
 			if (list.length === 0) return;
 			const active = document.activeElement;
 			const idx = active ? list.findIndex((el) => el === active || el.contains(active)) : -1;
@@ -37,5 +40,5 @@ export function useFieldCycle(fields: () => readonly HTMLElement[]) {
 		};
 		window.addEventListener("lh:kbd-cycle-fields", onCycle);
 		return () => window.removeEventListener("lh:kbd-cycle-fields", onCycle);
-	}, [fields]);
+	}, [fields, controller]);
 }

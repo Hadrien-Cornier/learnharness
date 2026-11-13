@@ -13,6 +13,16 @@ function message(stopReason: AssistantMessage["stopReason"], tokens = 1, errorMe
 		stopReason, errorMessage, timestamp: Date.now(),
 	};
 }
+function assertRetryOptions(current: Parameters<StreamFunction>[2], previous: Parameters<StreamFunction>[2]) {
+	assert.ok(current && previous);
+	const { signal: currentSignal, ...currentOptions } = current;
+	const { signal: previousSignal, ...previousOptions } = previous;
+	assert.deepEqual(currentOptions, previousOptions);
+	assert.notEqual(currentSignal, previousSignal);
+	assert.equal(previousSignal?.aborted, true);
+	assert.equal(currentSignal?.aborted, false);
+}
+
 function terminal(value: AssistantMessage, partial = false) {
 	const stream = createAssistantMessageEventStream();
 	if (partial) {
@@ -34,7 +44,7 @@ for (const role of ["extractor", "auditor", "researcher"] as const) {
 		const streamFn: StreamFunction = (...args) => {
 			calls++;
 			if (!first) first = args;
-			else { assert.equal(args[0], first[0]); assert.equal(args[1], first[1]); assert.equal(args[2], first[2]); }
+			else { assert.equal(args[0], first[0]); assert.equal(args[1], first[1]); assertRetryOptions(args[2], first[2]); }
 			return terminal(calls === 1 ? message("error", 3, "503 overloaded", true) : message("toolUse", 7, undefined, true), true);
 		};
 		const result = await runSubagent([{
@@ -113,7 +123,7 @@ test("retrying a later request preserves prior collector results without executi
 		}
 		assert.ok(args[1].messages.some((value) => value.role === "toolResult" && value.toolName === "collect"));
 		if (!failedArgs) failedArgs = args;
-		else { assert.equal(args[1], failedArgs[1]); assert.equal(args[2], failedArgs[2]); }
+		else { assert.equal(args[1], failedArgs[1]); assertRetryOptions(args[2], failedArgs[2]); }
 		return terminal(calls === 2 ? message("error", 3, "503 overloaded", true) : message("toolUse", 5, undefined, true));
 	};
 	const result = await runSubagent(["collect", "submit"].map((name) => ({

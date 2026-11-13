@@ -2,9 +2,10 @@ import React, { act } from "react";
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { parseHTML } from "linkedom";
-import { useDictation, type Dictation } from "../components/dictation.tsx";
+import { finishDictation, useDictation, useDictationTarget, type Dictation } from "../components/dictation.tsx";
 import { notifySettingsSaved } from "../components/settings-signal.ts";
 import { useDictationLanguage } from "../components/dictation-preference.ts";
+import { PaneContext } from "../components/workspace/pane-context.tsx";
 import { isDictationActive, useDictationActive } from "../components/dictation-state.ts";
 import type { UserSettings } from "../src/core/index.ts";
 
@@ -58,6 +59,7 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 		captures: 0,
 		stops: 0,
 		appends: [] as string[],
+		claimed: undefined as ((text: string) => void) | undefined,
 	};
 	Socket.all = [];
 	const previous = new Map<string, PropertyDescriptor | undefined>();
@@ -97,6 +99,8 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 	let latest!: Dictation;
 	let setting!: ReturnType<typeof useDictationLanguage>;
 	function Harness() {
+		const claimed = state.claimed;
+		useDictationTarget(React.useCallback((text: string) => claimed?.(text), [claimed]), !!claimed);
 		latest = useDictation({ append: (text) => state.appends.push(text) });
 		setting = useDictationLanguage();
 		state.active = useDictationActive();
@@ -104,6 +108,18 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 	}
 	let root = createRoot(document.getElementById("root")!);
 	let firstMount = true;
+	const paneDictations = new Map<string, Dictation>();
+	function PaneHarness({ id }: { id: string }) {
+		paneDictations.set(id, useDictation({ append: text => state.appends.push(text) }));
+		return null;
+	}
+	const mountPanes = async (active: string) => {
+		const pane = (id: string) => ({ id, active: id === active, root: { current: null }, getView: () => ({}), saveView: () => {} });
+		await act(async () => { root.render(<>
+			<PaneContext.Provider value={pane("a")}><PaneHarness id="a" /></PaneContext.Provider>
+			<PaneContext.Provider value={pane("b")}><PaneHarness id="b" /></PaneContext.Provider>
+		</>); });
+	};
 	const mount = async () => {
 		await act(async () => { root.render(<Harness />); });
 		// Each fixture is a new server record. Explicitly invalidate a prior
@@ -118,6 +134,7 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 		state,
 		get dictation() { return latest; },
 		get setting() { return setting; },
+		mountPanes, paneDictations,
 		mount,
 		unmount: () => dispose!(),
 		remount: async () => {
@@ -129,6 +146,57 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 }
 
 afterEach(async () => { await dispose?.(); restore?.(); dispose = undefined; restore = undefined; });
+
+test("side recording has a fixed destination, and main finish never waits for or stops it", async () => {
+	const f = await fixture(); await f.mount();
+	const side: string[] = []; const other: string[] = [];
+	await act(async () => { f.dictation.toggleFor({ id: "side:first", append: (text) => { side.push(text); } }); });
+	const socket = Socket.all[0]!;
+	await act(async () => { socket.open(); socket.final("Side words"); });
+	assert.equal(f.dictation.destinationId, "side:first");
+	await act(async () => { await finishDictation(); await f.dictation.finishFor("side:another"); });
+	assert.equal(f.dictation.phase, "recording");
+	assert.deepEqual(side, []);
+	// A shortcut at another focused input stops the current run, not a second capture.
+	await act(async () => { f.dictation.toggleFor({ id: "side:another", append: (text) => { other.push(text); } }); });
+	assert.equal(f.dictation.phase, "stopping"); assert.equal(f.state.captures, 1);
+	await act(async () => { socket.final("final tail"); socket.end(); });
+	assert.deepEqual(side, ["Side words final tail"]); assert.deepEqual(other, []); assert.deepEqual(f.state.appends, []);
+});
+
+test("side finish waits for final speech and flushes once into its original saved draft", async () => {
+	const f = await fixture(); await f.mount(); const side: string[] = [];
+	await act(async () => { f.dictation.toggleFor({ id: "side:thread", append: (text) => { side.push(text); } }); });
+	const socket = Socket.all[0]!; await act(async () => { socket.open(); socket.final("Closing"); });
+	let finished = false; let done!: Promise<void>;
+	await act(async () => { done = f.dictation.finishFor("side:thread").then(() => { finished = true; }); });
+	assert.equal(finished, false); assert.deepEqual(side, []);
+	await act(async () => { socket.final("words"); socket.end(); await done; });
+	assert.equal(finished, true); assert.deepEqual(side, ["Closing words"]);
+	await act(async () => { await f.dictation.finishFor("side:thread"); });
+	assert.deepEqual(side, ["Closing words"]);
+});
+
+test("closing side recording during microphone setup cannot leave a late live capture", async () => {
+	const f = await fixture(); const mic = deferred<{ getTracks: () => { stop: () => void }[] }>();
+	f.state.nextMic = mic.promise; await f.mount();
+	await act(async () => { f.dictation.toggleFor({ id: "side:connecting", append: (text) => { f.state.appends.push(text); } }); });
+	assert.equal(f.dictation.phase, "connecting");
+	await act(async () => { await f.dictation.finishFor("side:connecting"); });
+	assert.equal(f.dictation.phase, "idle");
+	await act(async () => { mic.resolve({ getTracks: () => [{ stop() { f.state.stops++; } }] }); });
+	assert.equal(f.state.stops, 1); assert.equal(Socket.all.length, 0); assert.deepEqual(f.state.appends, []);
+});
+
+test("main recording retains its starting question field when later focus/claims change", async () => {
+	const f = await fixture(); const first: string[] = []; const later: string[] = [];
+	f.state.claimed = (text) => first.push(text); await f.mount();
+	await act(async () => { f.dictation.toggle(); }); const socket = Socket.all[0]!;
+	await act(async () => { socket.open(); socket.final("Main reasoning"); });
+	f.state.claimed = (text) => later.push(text); await f.mount();
+	await act(async () => { socket.end(); });
+	assert.deepEqual(first, ["Main reasoning"]); assert.deepEqual(later, []); assert.deepEqual(f.state.appends, []);
+});
 
 test("waits for the saved language; reconnect preserves it and finals still flush exactly once", async () => {
 	const read = deferred<Response>();
@@ -319,4 +387,21 @@ test("microphone permission resolving after unmount immediately stops the late s
 	assert.equal(f.state.stops, 1);
 	assert.equal(Socket.all.length, 0);
 	assert.equal(isDictationActive(), false);
+});
+
+
+test("Escape cancels the recording owner after activating another pane", async () => {
+	const f = await fixture();
+	await f.mountPanes("a");
+	await act(async () => { f.paneDictations.get("a")!.toggle(); });
+	const socket = Socket.all[0]!;
+	await act(async () => { socket.open(); socket.final("discard me"); });
+	assert.equal(f.paneDictations.get("a")!.phase, "recording");
+	await f.mountPanes("b");
+	await act(async () => { window.dispatchEvent(new window.Event("lh:kbd-cancel-dictation")); });
+	assert.equal(f.paneDictations.get("a")!.phase, "idle");
+	assert.equal(f.state.stops, 1, "the owner's microphone is released");
+	assert.deepEqual(f.state.appends, [], "cancel discards the transcript");
+	await act(async () => { window.dispatchEvent(new window.Event("lh:kbd-toggle-dictation")); });
+	assert.equal(f.paneDictations.get("b")!.phase, "connecting", "toggle still targets the active pane");
 });

@@ -1,6 +1,6 @@
-import { usePaneCommand } from "@/components/workspace/pane-context";
-
 import { useEffect, type RefObject } from "react";
+import { useInteractionLayer, useInteractionLayers } from "./interaction-layers";
+import { usePaneActive } from "./workspace/pane-context";
 
 /**
  * Close-on-dismissal for floating panels (graph chrome, 2026-09-17):
@@ -15,28 +15,24 @@ export function usePopoverDismiss(
 	rootRef: RefObject<HTMLElement | null>,
 	open: boolean,
 	close: () => void,
-): void {
-	const paneCommand = usePaneCommand();
+	options?: { layerRootRef?: RefObject<HTMLElement | null>; ownerId?: string },
+) {
+	const controller = useInteractionLayers();
+	const paneActive = usePaneActive();
+	const enabled = open && paneActive;
+	const panel = options?.layerRootRef ?? rootRef;
+	const layer = useInteractionLayer({ kind: "popup", enabled, rootRef: panel, anchorRef: rootRef, ownerId: options?.ownerId,
+		onClose: () => { close(); return "closed"; } });
 	useEffect(() => {
-		if (!open) return;
+		if (!enabled) return;
 		const onPointerDown = (e: PointerEvent) => {
+			if (!controller.isElementEligible(panel.current)) return;
 			if (rootRef.current && !rootRef.current.contains(e.target as Node)) close();
 		};
-		const onKeyDown = (e: KeyboardEvent) => {
-			if (!paneCommand()) return;
-			if (e.key === "Escape") {
-				// Claim the Esc (keyboard wave A): the window-level dismiss
-				// chain must not ALSO stop dictation / abort a turn under
-				// this popover. Popovers are the chain's topmost layer.
-				e.stopPropagation();
-				close();
-			}
-		};
 		document.addEventListener("pointerdown", onPointerDown);
-		document.addEventListener("keydown", onKeyDown);
 		return () => {
 			document.removeEventListener("pointerdown", onPointerDown);
-			document.removeEventListener("keydown", onKeyDown);
 		};
-	}, [open, close, rootRef]);
+	}, [enabled, close, rootRef, panel, controller]);
+	return layer;
 }

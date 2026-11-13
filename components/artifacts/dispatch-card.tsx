@@ -25,6 +25,7 @@ const KIND_LABEL: Record<JobKind, string> = {
 	demo: "Demo agent",
 	visual: "Figure agent",
 	pdf: "PDF reader",
+	plugin: "Plugin worker",
 };
 
 export function DispatchCard({ toolCallId, kind }: { toolCallId: string; kind: JobKind }) {
@@ -63,7 +64,7 @@ export function DispatchCard({ toolCallId, kind }: { toolCallId: string; kind: J
 			className="ml-1 rounded-sm border border-border bg-card px-2 py-0.5 font-ui normal-case tracking-normal text-foreground transition-colors hover:border-muted-foreground/50 disabled:opacity-50">
 			{retrying ? "Retrying…" : "Retry"}
 		</button>
-		{retryError && <span role="alert" className="text-red-500">{retryError}</span>}
+		{retryError && <span role="alert" className="text-error">{retryError}</span>}
 	</> : null;
 	const failureDetails = job?.status === "error" && job.error ? (
 		<details className="basis-full" data-testid="dispatch-error-details">
@@ -71,7 +72,7 @@ export function DispatchCard({ toolCallId, kind }: { toolCallId: string; kind: J
 			<pre className="mt-1 whitespace-pre-wrap break-words font-ui text-xs">{job.error}</pre>
 		</details>
 	) : null;
-	const label = KIND_LABEL[kind];
+	const label = kind === "plugin" ? job?.plugin?.label || job?.plugin?.toolName || KIND_LABEL.plugin : KIND_LABEL[kind];
 
 	if (!job || job.status === "running") {
 		return <DispatchActivityCard job={job} label={label} />;
@@ -94,7 +95,7 @@ export function DispatchCard({ toolCallId, kind }: { toolCallId: string; kind: J
 			className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
 			data-testid="dispatch-settled"
 		>
-			{failed ? <XIcon className="size-3.5 text-red-500" /> : <CheckIcon className="size-3.5" />}
+			{failed ? <XIcon className="size-3.5 text-error" /> : <CheckIcon className="size-3.5" />}
 			<span className="font-medium uppercase tracking-wide">{label}</span>
 			<span>{failed ? "failed" : "finished"}</span>
 			{retryAction}

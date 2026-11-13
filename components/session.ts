@@ -112,9 +112,9 @@ export function useChatSession({ chatId, initialMessages, initialError, initiall
 		[model],
 	);
 
-	const send = useCallback((input: ChatInput, onAccepted?: () => void) => model.send(input, onAccepted), [model]);
+	const send = useCallback((input: ChatInput, onAccepted?: () => void, questionKey?: string, onDeliverySettled?: () => void) => model.send(input, onAccepted, questionKey, onDeliverySettled), [model]);
 	const continueIfOwed = useCallback((record: readonly LhMessage[]) => void model.continueIfOwed(record), [model]);
-	const steer = useCallback((text: string, onAccepted?: () => void) => void model.steer(text, onAccepted), [model]);
+	const steer = useCallback((text: string, images?: import("@/src/core").PluginSubmissionContent["images"], onAccepted?: () => void, onDeliverySettled?: () => void) => model.steer(text, images, onAccepted, onDeliverySettled), [model]);
 	const submitAnswer = useCallback(
 		(tool: string, toolCallId: string, output: QuestionAnswerData, questionKey?: string) =>
 			void model.submitAnswer(tool, toolCallId, output, questionKey, () => { if (paneRef.current?.getView().questionDraft?.questionId === questionKey) paneRef.current?.saveView({ questionDraft: null }); }),
@@ -133,11 +133,16 @@ export function useChatSession({ chatId, initialMessages, initialError, initiall
 		model.saveQuestionDraft(questionKey, draft);
 		paneRef.current?.saveView({ questionDraft: { questionId: questionKey, text: serializeQuestionDraft(model.questionDraft(questionKey) ?? {}) } });
 	}, [model]);
-	const setMessages = useCallback((record: LhMessage[], turnError?: string) => {
-		model.setMessages(record, turnError);
+	const setMessages = useCallback((record: LhMessage[], turnError?: string, availability?: Parameters<SessionModel["setMessages"]>[2], problemAvailability?: Parameters<SessionModel["setMessages"]>[3]) => {
+		model.setMessages(record, turnError, availability, problemAvailability);
 		const saved = paneRef.current?.getView().questionDraft;
 		if (saved && saved.questionId !== pendingQuestionOf(record)?.key) paneRef.current?.saveView({ questionDraft: null });
 	}, [model]);
+	const reconcile = useCallback(() => model.reconcile(), [model]);
+	const readRecord = useCallback((options?: Parameters<SessionModel["readRecord"]>[0]) => model.readRecord(options), [model]);
+	const pluginProblemDraft = useCallback((snapshot: Parameters<SessionModel["pluginProblemDraft"]>[0]) => model.pluginProblemDraft(snapshot), [model]);
+	const pluginQuestionDraft = useCallback((snapshot: Parameters<SessionModel["pluginQuestionDraft"]>[0]) => model.pluginQuestionDraft(snapshot), [model]);
+	const dismissPluginQuestion = useCallback((occurrence: Parameters<SessionModel["dismissPluginQuestion"]>[0], questionId?: string) => model.dismissPluginQuestion(occurrence, questionId), [model]);
 	const adoptRecord = useCallback((record: LhMessage[]) => model.adoptRecord(record), [model]);
 	const stop = useCallback(() => model.stop(), [model]);
 	const clearError = useCallback(() => model.clearError(), [model]);
@@ -146,9 +151,19 @@ export function useChatSession({ chatId, initialMessages, initialError, initiall
 	return {
 		messages: state.messages,
 		nativeMessages: state.nativeMessages,
+		canonicalMessages: state.canonicalMessages,
+		reconciliation: state.reconciliation,
+		reconcile,
+		readRecord,
+		pluginQuestionAvailability: state.pluginQuestionAvailability,
+		pluginProblemAvailability: state.pluginProblemAvailability,
+		pluginProblemDraft,
+		pluginQuestionDraft,
+		dismissPluginQuestion,
 		hasConfirmedConversation: state.hasConfirmedConversation,
 		contextTokens: state.contextTokens,
 		status: state.status,
+		evaluating: state.evaluating,
 		error: state.error,
 		steerQueue: state.steerQueue,
 		send,
