@@ -25,6 +25,8 @@ Use macOS with Node, npm, and Xcode installed. Signing and notarization are disa
 
 The build script clears only `dist-custom` and `.next/standalone`. It runs the production build, provider runtime check, standalone curation, and server smoke test before packaging. It never uploads automatically.
 
+The custom build adds the model entries in `scripts/custom-models.json` to the packaged Pi AI catalogs. An entry supplied by Pi AI takes precedence when it has the same provider, transport, and model ID.
+
 The unsigned app can require a manual open through macOS Privacy & Security. Download updates from this fork's Releases page and replace only the custom app. Its profile stays separate from the official app.
 
 ## Merge upstream changes
